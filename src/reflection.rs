@@ -441,9 +441,7 @@ impl TypeReflectionInfo {
             (
                 TypeReflectionInfo::ListType { element_type: e1 },
                 TypeReflectionInfo::ListType { element_type: e2 },
-            ) => {
-                e1.is_compatible_with(e2)
-            }
+            ) => e1.is_compatible_with(e2),
 
             // System types have special compatibility rules
             (

@@ -634,7 +634,8 @@ impl ConformanceValidator {
     pub fn add_rule(&mut self, rule: Box<dyn ValidationRule>) {
         self.custom_rules.push(rule);
         // Sort by priority (highest first)
-        self.custom_rules.sort_by_key(|b| std::cmp::Reverse(b.priority()));
+        self.custom_rules
+            .sort_by_key(|b| std::cmp::Reverse(b.priority()));
     }
 
     /// Validate a resource using all applicable rules

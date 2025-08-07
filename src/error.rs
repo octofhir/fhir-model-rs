@@ -10,7 +10,7 @@ pub enum ModelError {
     #[error("Type not found: {type_name}")]
     TypeNotFound {
         /// Name of the type that was not found
-        type_name: String
+        type_name: String,
     },
 
     /// Property not found on type
@@ -19,21 +19,21 @@ pub enum ModelError {
         /// Name of the type being accessed
         type_name: String,
         /// Name of the property that was not found
-        property: String
+        property: String,
     },
 
     /// Schema loading error
     #[error("Schema loading error: {message}")]
     SchemaLoadError {
         /// Error message describing the schema loading failure
-        message: String
+        message: String,
     },
 
     /// Validation error
     #[error("Validation error: {message}")]
     ValidationError {
         /// Error message describing the validation failure
-        message: String
+        message: String,
     },
 
     /// Constraint evaluation error
@@ -51,7 +51,7 @@ pub enum ModelError {
         /// The reference that could not be resolved
         reference: String,
         /// Error message describing the resolution failure
-        message: String
+        message: String,
     },
 
     /// Type incompatibility error
@@ -60,14 +60,14 @@ pub enum ModelError {
         /// The expected type
         expected: String,
         /// The actual type that was encountered
-        actual: String
+        actual: String,
     },
 
     /// Boxing/unboxing error
     #[error("Boxing error: {message}")]
     BoxingError {
         /// Error message describing the boxing failure
-        message: String
+        message: String,
     },
 
     /// Network or I/O error
@@ -83,7 +83,7 @@ pub enum ModelError {
     #[error("Model error: {message}")]
     Generic {
         /// Error message describing the generic failure
-        message: String
+        message: String,
     },
 }
 

@@ -50,7 +50,7 @@ pub enum BoxableValue {
         /// Numeric value of the quantity
         value: f64,
         /// Optional unit of measurement
-        unit: Option<String>
+        unit: Option<String>,
     },
     /// Collection of boxed values
     Collection(Vec<BoxedFhirPathValue>),
