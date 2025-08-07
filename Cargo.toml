@@ -1,0 +1,41 @@
+[package]
+name = "octofhir-fhir-model"
+version = "0.1.0"
+edition = "2024"
+authors = ["OctoFHIR Team <funyloony@gmail.com>"]
+license = "Apache-2.0"
+description = "Core FHIR model abstractions and ModelProvider trait for FHIRPath type-aware evaluation"
+readme = "README.md"
+repository = "https://github.com/octofhir/fhir-model-rs"
+keywords = ["fhir", "healthcare", "model", "types", "fhirpath"]
+categories = ["data-structures", "api-bindings", "science"]
+
+[features]
+default = []
+async = ["async-trait", "tokio"]
+serde = ["dep:serde"]
+
+[dependencies]
+# Core serialization
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = "1.0"  # Always available for validation
+
+# Error handling
+thiserror = "2.0"
+
+# Async support
+async-trait = { version = "0.1", optional = true }
+tokio = { version = "1.0", features = ["sync"], optional = true }
+
+# Collections and utilities
+indexmap = "2.0"
+smallvec = { version = "1.11", features = ["serde"] }
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["rt", "macros", "test-util"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[lib]
+name = "octofhir_fhir_model"
+path = "src/lib.rs"
