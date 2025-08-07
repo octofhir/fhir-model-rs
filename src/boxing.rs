@@ -1,7 +1,5 @@
 //! Enhanced value boxing system for metadata preservation
 //!
-//! This module implements the universal boxing strategy based on atomic-ehr's
-//! ADR-009 requirements, ensuring all values preserve metadata throughout evaluation.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -48,7 +46,12 @@ pub enum BoxableValue {
     /// Time value (ISO 8601 format)
     Time(String),
     /// Quantity value with unit
-    Quantity { value: f64, unit: Option<String> },
+    Quantity {
+        /// Numeric value of the quantity
+        value: f64,
+        /// Optional unit of measurement
+        unit: Option<String>
+    },
     /// Collection of boxed values
     Collection(Vec<BoxedFhirPathValue>),
     /// Complex object (e.g., FHIR resource or complex type)
@@ -404,16 +407,16 @@ impl Default for PrimitiveExtension {
 impl fmt::Display for BoxedFhirPathValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.value {
-            BoxableValue::Boolean(b) => write!(f, "{}", b),
-            BoxableValue::Integer(i) => write!(f, "{}", i),
-            BoxableValue::Decimal(d) => write!(f, "{}", d),
-            BoxableValue::String(s) => write!(f, "'{}'", s),
-            BoxableValue::Date(d) => write!(f, "@{}", d),
-            BoxableValue::DateTime(dt) => write!(f, "@{}", dt),
-            BoxableValue::Time(t) => write!(f, "@T{}", t),
+            BoxableValue::Boolean(b) => write!(f, "{b}"),
+            BoxableValue::Integer(i) => write!(f, "{i}"),
+            BoxableValue::Decimal(d) => write!(f, "{d}"),
+            BoxableValue::String(s) => write!(f, "'{s}'"),
+            BoxableValue::Date(d) => write!(f, "@{d}"),
+            BoxableValue::DateTime(dt) => write!(f, "@{dt}"),
+            BoxableValue::Time(t) => write!(f, "@T{t}"),
             BoxableValue::Quantity { value, unit } => match unit {
-                Some(u) => write!(f, "{} '{}'", value, u),
-                None => write!(f, "{}", value),
+                Some(u) => write!(f, "{value} '{u}'"),
+                None => write!(f, "{value}"),
             },
             BoxableValue::Collection(items) => {
                 let item_strings: Vec<String> = items.iter().map(|item| item.to_string()).collect();
@@ -422,7 +425,7 @@ impl fmt::Display for BoxedFhirPathValue {
             BoxableValue::Complex(complex) => {
                 write!(f, "{}({})", complex.type_name, complex.properties.len())
             }
-            BoxableValue::Reference(ref_str) => write!(f, "Reference({})", ref_str),
+            BoxableValue::Reference(ref_str) => write!(f, "Reference({ref_str})"),
             BoxableValue::Empty => write!(f, "{{}}"),
         }
     }
@@ -432,13 +435,13 @@ impl fmt::Display for SourceLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.element_path)?;
         if let Some(resource_type) = &self.resource_type {
-            write!(f, " in {}", resource_type)?;
+            write!(f, " in {resource_type}")?;
             if let Some(resource_id) = &self.resource_id {
-                write!(f, "/{}", resource_id)?;
+                write!(f, "/{resource_id}")?;
             }
         }
         if let (Some(line), Some(column)) = (self.line, self.column) {
-            write!(f, " at {}:{}", line, column)?;
+            write!(f, " at {line}:{column}")?;
         }
         Ok(())
     }

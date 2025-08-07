@@ -8,38 +8,67 @@ pub type Result<T> = std::result::Result<T, ModelError>;
 pub enum ModelError {
     /// Type not found in model
     #[error("Type not found: {type_name}")]
-    TypeNotFound { type_name: String },
+    TypeNotFound {
+        /// Name of the type that was not found
+        type_name: String
+    },
 
     /// Property not found on type
     #[error("Property '{property}' not found on type '{type_name}'")]
-    PropertyNotFound { type_name: String, property: String },
+    PropertyNotFound {
+        /// Name of the type being accessed
+        type_name: String,
+        /// Name of the property that was not found
+        property: String
+    },
 
     /// Schema loading error
     #[error("Schema loading error: {message}")]
-    SchemaLoadError { message: String },
+    SchemaLoadError {
+        /// Error message describing the schema loading failure
+        message: String
+    },
 
     /// Validation error
     #[error("Validation error: {message}")]
-    ValidationError { message: String },
+    ValidationError {
+        /// Error message describing the validation failure
+        message: String
+    },
 
     /// Constraint evaluation error
     #[error("Constraint evaluation error: {constraint_key}: {message}")]
     ConstraintError {
+        /// Key identifying the constraint that failed
         constraint_key: String,
+        /// Error message describing the constraint failure
         message: String,
     },
 
     /// Reference resolution error
     #[error("Reference resolution error: {reference}: {message}")]
-    ReferenceError { reference: String, message: String },
+    ReferenceError {
+        /// The reference that could not be resolved
+        reference: String,
+        /// Error message describing the resolution failure
+        message: String
+    },
 
     /// Type incompatibility error
     #[error("Type incompatibility: expected {expected}, got {actual}")]
-    TypeIncompatibility { expected: String, actual: String },
+    TypeIncompatibility {
+        /// The expected type
+        expected: String,
+        /// The actual type that was encountered
+        actual: String
+    },
 
     /// Boxing/unboxing error
     #[error("Boxing error: {message}")]
-    BoxingError { message: String },
+    BoxingError {
+        /// Error message describing the boxing failure
+        message: String
+    },
 
     /// Network or I/O error
     #[error("I/O error: {0}")]
@@ -52,7 +81,10 @@ pub enum ModelError {
 
     /// Generic error with message
     #[error("Model error: {message}")]
-    Generic { message: String },
+    Generic {
+        /// Error message describing the generic failure
+        message: String
+    },
 }
 
 impl ModelError {

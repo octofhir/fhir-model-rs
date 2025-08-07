@@ -195,9 +195,7 @@ pub trait ModelProvider: Send + Sync + std::fmt::Debug {
         context: &dyn ResolutionContext,
     ) -> Option<Box<dyn ValueReflection>>;
 
-    /// **MANDATORY ANALYSIS PIPELINE** - Required by atomic-ehr ADR-008
-    /// Analyze expression for type requirements and optimization opportunities
-    /// Returns type information needed for compilation and runtime evaluation
+    /// Analyze a FHIRPath expression for type safety and optimization opportunities
     fn analyze_expression(&self, expression: &str) -> Result<ExpressionAnalysis>;
 
     /// **NAVIGATION-DRIVEN BOXING** - Support for primitive extension preservation
@@ -287,7 +285,7 @@ pub trait ModelProvider: Send + Sync + std::fmt::Debug {
                 result.push(PolymorphicTypeInfo {
                     type_name: type_name.clone(),
                     type_suffix: type_name.clone(),
-                    property_name: format!("{}{}", base_name, type_name),
+                    property_name: format!("{base_name}{type_name}"),
                     type_reflection,
                     is_resource: self.is_resource_type(&type_name),
                 });
@@ -354,10 +352,8 @@ pub trait ModelProvider: Send + Sync + std::fmt::Debug {
         None
     }
 
-    /// **ATOMIC-EHR COMPLIANCE** - Enhanced type-aware execution support
-    /// Pre-analyze FHIRPath expressions to determine required model information
-    /// This enables compile-time optimizations and runtime type checking
-    fn preanalyze_fhirpath(&self, expression: &str) -> Result<FhirPathAnalysisResult> {
+    /// Pre-analyze a FHIRPath expression to determine analysis requirements
+    fn preanalyze_fhirpath(&self, _expression: &str) -> Result<FhirPathAnalysisResult> {
         // Default implementation returns basic analysis
         Ok(FhirPathAnalysisResult {
             requires_model_info: false,
@@ -368,7 +364,6 @@ pub trait ModelProvider: Send + Sync + std::fmt::Debug {
         })
     }
 
-    /// Support for strict type evaluation mode (atomic-ehr ADR-008)
     /// Validate that navigation operations are type-safe at compile time
     fn validate_navigation_path(&self, base_type: &str, path: &str)
     -> Result<NavigationValidation>;
@@ -468,7 +463,7 @@ pub struct OptimizationHint {
     pub impact: f64,
 }
 
-/// FHIRPath analysis result for atomic-ehr compliance
+/// Result of FHIRPath expression pre-analysis
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FhirPathAnalysisResult {

@@ -1,0 +1,18 @@
+# Rustfmt configuration for octofhir-fhir-model
+# This file configures code formatting for consistent style across the project
+# Only includes stable rustfmt options
+
+# Edition and basic settings
+edition = "2024"
+hard_tabs = false
+tab_spaces = 4
+
+
+# Line length and wrapping
+max_width = 100
+
+# Import organization
+reorder_imports = true
+
+# Function and struct formatting
+fn_params_layout = "Tall"

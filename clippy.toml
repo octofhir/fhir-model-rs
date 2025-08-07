@@ -1,0 +1,18 @@
+# Clippy configuration for octofhir-fhir-model
+# This file configures clippy lints for consistent code quality across the project
+
+# Deny warnings by default (can be overridden with --allow)
+warn-on-all-wildcard-imports = true
+
+# Performance lints
+too-many-arguments-threshold = 8
+type-complexity-threshold = 250
+
+# Style preferences
+enum-variant-name-threshold = 3
+
+# Cognitive complexity
+cognitive-complexity-threshold = 30
+
+# Allow some common patterns in FHIR modeling
+avoid-breaking-exported-api = false

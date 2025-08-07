@@ -7,7 +7,6 @@
 //! - Enhanced value boxing system
 
 use octofhir_fhir_model::*;
-use std::collections::HashMap;
 
 /// Mock implementation of ValueReflection for testing
 struct MockPatientResource {
@@ -124,7 +123,7 @@ impl conformance::ValidationRule for RequiredNameRule {
             conformance::ValidationRuleResult::success()
         } else {
             let violation = conformance::ConformanceViolation::error(
-                &format!("{}.name", path),
+                format!("{path}.name"),
                 "Patient name is required",
             );
             conformance::ValidationRuleResult::with_violations(vec![violation])
@@ -150,7 +149,7 @@ fn test_model_provider_integration() {
         reflection::ElementInfo::new("id", string_type.clone()),
         reflection::ElementInfo::new("name", string_type.clone())
             .with_cardinality(1, None) // Required
-            .as_summary(),
+            .with_summary(),
     ];
     let patient_type =
         reflection::TypeReflectionInfo::class_type("FHIR", "Patient", patient_elements);
@@ -357,11 +356,11 @@ fn test_performance_characteristics() {
     let start = Instant::now();
 
     for i in 0..1000 {
-        let boxed = boxing::BoxedFhirPathValue::string(format!("value-{}", i))
+        let boxed = boxing::BoxedFhirPathValue::string(format!("value-{i}"))
             .with_type_info(reflection::TypeReflectionInfo::simple_type(
                 "System", "String",
             ))
-            .with_path(format!("Patient.name[{}]", i))
+            .with_path(format!("Patient.name[{i}]"))
             .with_metadata("index", i.to_string());
 
         // Verify the boxing worked

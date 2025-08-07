@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Perform a dry run (do not actually publish)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Release to crates.io
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Extract version from Cargo.toml
+      id: version
+      run: |
+        VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Extracted version: $VERSION"
+
+    - name: Check if version exists on crates.io
+      id: check_version
+      run: |
+        PACKAGE_NAME=$(grep '^name = ' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/')
+        VERSION=${{ steps.version.outputs.version }}
+        
+        echo "Checking if $PACKAGE_NAME version $VERSION exists on crates.io..."
+        
+        # Check if the version exists by querying crates.io API
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://crates.io/api/v1/crates/$PACKAGE_NAME/$VERSION")
+        
+        if [ "$HTTP_STATUS" = "200" ]; then
+          echo "Version $VERSION already exists on crates.io"
+          echo "exists=true" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "Version $VERSION does not exist on crates.io, proceeding with release"
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run tests
+      run: cargo test --all-features
+
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+    - name: Run clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: Build release
+      run: cargo build --release
+
+    - name: Dry run publish
+      if: ${{ inputs.dry_run }}
+      run: cargo publish --dry-run
+
+    - name: Publish to crates.io
+      if: ${{ !inputs.dry_run }}
+      env:
+        CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      run: cargo publish
+
+    - name: Create GitHub Release
+      if: ${{ !inputs.dry_run }}
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.version.outputs.version }}
+        release_name: Release v${{ steps.version.outputs.version }}
+        body: |
+          Release of octofhir-fhir-model version ${{ steps.version.outputs.version }}
+          
+          Published to crates.io: https://crates.io/crates/octofhir-fhir-model/${{ steps.version.outputs.version }}
+        draft: false
+        prerelease: false
+
+    - name: Summary
+      run: |
+        echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Package**: octofhir-fhir-model" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ inputs.dry_run }}" = "true" ]; then
+          echo "- **Status**: Dry run completed successfully" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Status**: Published to crates.io" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Release**: Created" >> $GITHUB_STEP_SUMMARY
+        fi

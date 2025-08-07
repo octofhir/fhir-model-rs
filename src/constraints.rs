@@ -266,19 +266,20 @@ impl ConstraintValue {
     pub fn to_boolean(&self) -> bool {
         self.is_truthy()
     }
+}
 
-    /// Convert to string representation
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for ConstraintValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConstraintValue::Boolean(b) => b.to_string(),
-            ConstraintValue::String(s) => s.clone(),
-            ConstraintValue::Integer(i) => i.to_string(),
-            ConstraintValue::Decimal(d) => d.to_string(),
+            ConstraintValue::Boolean(b) => write!(f, "{b}"),
+            ConstraintValue::String(s) => write!(f, "{s}"),
+            ConstraintValue::Integer(i) => write!(f, "{i}"),
+            ConstraintValue::Decimal(d) => write!(f, "{d}"),
             ConstraintValue::Collection(c) => {
                 let strings: Vec<String> = c.iter().map(|v| v.to_string()).collect();
-                format!("[{}]", strings.join(", "))
+                write!(f, "[{}]", strings.join(", "))
             }
-            ConstraintValue::Empty => "{}".to_string(),
+            ConstraintValue::Empty => write!(f, "{{}}"),
         }
     }
 }
@@ -394,7 +395,7 @@ impl std::fmt::Display for ConstraintViolation {
         )?;
 
         if let (Some(expected), Some(actual)) = (&self.expected, &self.actual) {
-            write!(f, " (expected: {}, actual: {})", expected, actual)?;
+            write!(f, " (expected: {expected}, actual: {actual})")?;
         }
 
         Ok(())

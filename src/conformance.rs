@@ -343,11 +343,11 @@ impl std::fmt::Display for ConformanceViolation {
         write!(f, "[{}] {}: {}", self.severity, self.path, self.message)?;
 
         if let Some(constraint_key) = &self.constraint_key {
-            write!(f, " (constraint: {})", constraint_key)?;
+            write!(f, " (constraint: {constraint_key})")?;
         }
 
         if let (Some(expected), Some(actual)) = (&self.expected, &self.actual) {
-            write!(f, " (expected: {}, actual: {})", expected, actual)?;
+            write!(f, " (expected: {expected}, actual: {actual})")?;
         }
 
         Ok(())
@@ -359,7 +359,7 @@ impl std::fmt::Display for ConformanceWarning {
         write!(f, "[WARNING] {}: {}", self.path, self.message)?;
 
         if let Some(code) = &self.code {
-            write!(f, " ({})", code)?;
+            write!(f, " ({code})")?;
         }
 
         Ok(())
@@ -634,8 +634,7 @@ impl ConformanceValidator {
     pub fn add_rule(&mut self, rule: Box<dyn ValidationRule>) {
         self.custom_rules.push(rule);
         // Sort by priority (highest first)
-        self.custom_rules
-            .sort_by(|a, b| b.priority().cmp(&a.priority()));
+        self.custom_rules.sort_by_key(|b| std::cmp::Reverse(b.priority()));
     }
 
     /// Validate a resource using all applicable rules

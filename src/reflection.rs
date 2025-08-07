@@ -114,7 +114,7 @@ impl TypeReflectionInfo {
             TypeReflectionInfo::ClassInfo { name, .. } => name,
             TypeReflectionInfo::ListType { element_type: _ } => {
                 // For list types, we use a generic name
-                return "List";
+                "List"
             }
             TypeReflectionInfo::TupleType { .. } => "Tuple",
         }
@@ -208,7 +208,7 @@ impl TypeReflectionInfo {
                 if namespace.is_empty() {
                     name.clone()
                 } else {
-                    format!("{}.{}", namespace, name)
+                    format!("{namespace}.{name}")
                 }
             }
             TypeReflectionInfo::ListType { element_type } => {
@@ -295,13 +295,13 @@ impl ElementInfo {
     }
 
     /// Mark as modifier element
-    pub fn as_modifier(mut self) -> Self {
+    pub fn with_modifier(mut self) -> Self {
         self.is_modifier = true;
         self
     }
 
     /// Mark as summary element
-    pub fn as_summary(mut self) -> Self {
+    pub fn with_summary(mut self) -> Self {
         self.is_summary = true;
         self
     }
@@ -319,7 +319,7 @@ impl ElementInfo {
 
     /// Check if this element can have multiple values
     pub fn is_multiple(&self) -> bool {
-        self.max_cardinality.map_or(true, |max| max > 1)
+        self.max_cardinality.is_none_or(|max| max > 1)
     }
 }
 
@@ -334,7 +334,7 @@ impl TupleElementInfo {
     }
 
     /// Mark as one-based indexed
-    pub fn as_one_based(mut self) -> Self {
+    pub fn with_one_based(mut self) -> Self {
         self.is_one_based = true;
         self
     }
@@ -442,7 +442,7 @@ impl TypeReflectionInfo {
                 TypeReflectionInfo::ListType { element_type: e1 },
                 TypeReflectionInfo::ListType { element_type: e2 },
             ) => {
-                return e1.is_compatible_with(e2);
+                e1.is_compatible_with(e2)
             }
 
             // System types have special compatibility rules
@@ -665,7 +665,7 @@ mod tests {
                 .with_cardinality(0, Some(1)),
             ElementInfo::new("name", TypeReflectionInfo::simple_type("System", "String"))
                 .with_cardinality(0, None)
-                .as_summary(),
+                .with_summary(),
         ];
 
         let patient_type = TypeReflectionInfo::class_type("FHIR", "Patient", elements);
@@ -714,8 +714,8 @@ mod tests {
     fn test_element_info() {
         let element = ElementInfo::new("name", TypeReflectionInfo::simple_type("System", "String"))
             .with_cardinality(1, None)
-            .as_modifier()
-            .as_summary()
+            .with_modifier()
+            .with_summary()
             .with_documentation("Patient name");
 
         assert_eq!(element.name, "name");
