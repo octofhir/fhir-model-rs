@@ -72,16 +72,17 @@ pub struct PolymorphicTypeInfo {
 }
 
 /// Context for reference resolution operations
+#[async_trait::async_trait]
 pub trait ResolutionContext: Send + Sync {
     /// Resolve a local reference within the current bundle/context
-    fn resolve_local_reference(
+    async fn resolve_local_reference(
         &self,
         resource_type: &str,
         id: &str,
     ) -> Option<Box<dyn ValueReflection>>;
 
     /// Resolve an external reference via HTTP or other means
-    fn resolve_external_reference(
+    async fn resolve_external_reference(
         &self,
         base_url: &str,
         resource_type: &str,
@@ -89,7 +90,10 @@ pub trait ResolutionContext: Send + Sync {
     ) -> Option<Box<dyn ValueReflection>>;
 
     /// Resolve a contained resource reference
-    fn resolve_contained_reference(&self, fragment_id: &str) -> Option<Box<dyn ValueReflection>>;
+    async fn resolve_contained_reference(
+        &self,
+        fragment_id: &str,
+    ) -> Option<Box<dyn ValueReflection>>;
 
     /// Get the current context path for debugging
     fn current_path(&self) -> String;
@@ -160,7 +164,7 @@ pub struct ElementType {
 }
 
 /// Main trait for providing FHIR model information
-#[cfg_attr(feature = "async", async_trait::async_trait)]
+#[async_trait::async_trait]
 pub trait ModelProvider: Send + Sync + std::fmt::Debug {
     /// Get type reflection information for a type name
     fn get_type_reflection(&self, type_name: &str) -> Option<TypeReflectionInfo>;
@@ -176,10 +180,10 @@ pub trait ModelProvider: Send + Sync + std::fmt::Debug {
     fn get_property_type(&self, parent_type: &str, property: &str) -> Option<TypeReflectionInfo>;
 
     /// Get structure definition by URL
-    fn get_structure_definition(&self, url: &str) -> Option<StructureDefinition>;
+    async fn get_structure_definition(&self, url: &str) -> Option<StructureDefinition>;
 
     /// Validate conformance against a structure definition
-    fn validate_conformance(
+    async fn validate_conformance(
         &self,
         value: &dyn ValueReflection,
         profile_url: &str,
@@ -189,18 +193,18 @@ pub trait ModelProvider: Send + Sync + std::fmt::Debug {
     fn get_constraints(&self, type_name: &str) -> Vec<ConstraintInfo>;
 
     /// Resolve a reference to another resource
-    fn resolve_reference(
+    async fn resolve_reference(
         &self,
         reference: &str,
         context: &dyn ResolutionContext,
     ) -> Option<Box<dyn ValueReflection>>;
 
     /// Analyze a FHIRPath expression for type safety and optimization opportunities
-    fn analyze_expression(&self, expression: &str) -> Result<ExpressionAnalysis>;
+    async fn analyze_expression(&self, expression: &str) -> Result<ExpressionAnalysis>;
 
     /// **NAVIGATION-DRIVEN BOXING** - Support for primitive extension preservation
     /// Box a value with full metadata preservation during navigation
-    fn box_value_with_metadata(
+    async fn box_value_with_metadata(
         &self,
         value: &dyn ValueReflection,
         navigation_path: &str,
@@ -353,7 +357,7 @@ pub trait ModelProvider: Send + Sync + std::fmt::Debug {
     }
 
     /// Pre-analyze a FHIRPath expression to determine analysis requirements
-    fn preanalyze_fhirpath(&self, _expression: &str) -> Result<FhirPathAnalysisResult> {
+    async fn preanalyze_fhirpath(&self, _expression: &str) -> Result<FhirPathAnalysisResult> {
         // Default implementation returns basic analysis
         Ok(FhirPathAnalysisResult {
             requires_model_info: false,
@@ -365,23 +369,26 @@ pub trait ModelProvider: Send + Sync + std::fmt::Debug {
     }
 
     /// Validate that navigation operations are type-safe at compile time
-    fn validate_navigation_path(&self, base_type: &str, path: &str)
-    -> Result<NavigationValidation>;
+    async fn validate_navigation_path(
+        &self,
+        base_type: &str,
+        path: &str,
+    ) -> Result<NavigationValidation>;
 
     /// Enhanced conformance checking with detailed violation reporting
-    fn validate_conformance_detailed(
+    async fn validate_conformance_detailed(
         &self,
         value: &dyn ValueReflection,
         profile_url: &str,
     ) -> Result<DetailedConformanceResult> {
         // Default delegates to basic conformance validation
-        self.validate_conformance(value, profile_url)
-            .map(|result| DetailedConformanceResult {
-                basic_result: result,
-                violations: Vec::new(),
-                warnings: Vec::new(),
-                information: Vec::new(),
-            })
+        let result = self.validate_conformance(value, profile_url).await?;
+        Ok(DetailedConformanceResult {
+            basic_result: result,
+            violations: Vec::new(),
+            warnings: Vec::new(),
+            information: Vec::new(),
+        })
     }
 }
 
@@ -597,6 +604,7 @@ impl EmptyModelProvider {
     }
 }
 
+#[async_trait::async_trait]
 impl ModelProvider for EmptyModelProvider {
     fn get_type_reflection(&self, _type_name: &str) -> Option<TypeReflectionInfo> {
         None
@@ -614,11 +622,11 @@ impl ModelProvider for EmptyModelProvider {
         None
     }
 
-    fn get_structure_definition(&self, _url: &str) -> Option<StructureDefinition> {
+    async fn get_structure_definition(&self, _url: &str) -> Option<StructureDefinition> {
         None
     }
 
-    fn validate_conformance(
+    async fn validate_conformance(
         &self,
         _value: &dyn ValueReflection,
         _profile_url: &str,
@@ -630,7 +638,7 @@ impl ModelProvider for EmptyModelProvider {
         Vec::new()
     }
 
-    fn resolve_reference(
+    async fn resolve_reference(
         &self,
         _reference: &str,
         _context: &dyn ResolutionContext,
@@ -662,7 +670,7 @@ impl ModelProvider for EmptyModelProvider {
         None
     }
 
-    fn analyze_expression(&self, _expression: &str) -> Result<ExpressionAnalysis> {
+    async fn analyze_expression(&self, _expression: &str) -> Result<ExpressionAnalysis> {
         Ok(ExpressionAnalysis {
             referenced_types: Vec::new(),
             navigation_paths: Vec::new(),
@@ -672,7 +680,7 @@ impl ModelProvider for EmptyModelProvider {
         })
     }
 
-    fn box_value_with_metadata(
+    async fn box_value_with_metadata(
         &self,
         _value: &dyn ValueReflection,
         _navigation_path: &str,
@@ -691,7 +699,7 @@ impl ModelProvider for EmptyModelProvider {
         None
     }
 
-    fn validate_navigation_path(
+    async fn validate_navigation_path(
         &self,
         _base_type: &str,
         _path: &str,
@@ -758,12 +766,15 @@ mod tests {
         assert_eq!(metrics.cache_hit_rate(), 0.8);
     }
 
-    #[test]
-    fn test_enhanced_provider_methods() {
+    #[tokio::test]
+    async fn test_enhanced_provider_methods() {
         let provider = EmptyModelProvider::new();
 
         // Test expression analysis
-        let analysis = provider.analyze_expression("Patient.name.given").unwrap();
+        let analysis = provider
+            .analyze_expression("Patient.name.given")
+            .await
+            .unwrap();
         assert!(analysis.referenced_types.is_empty());
         assert!(analysis.navigation_paths.is_empty());
         assert!(!analysis.requires_runtime_types);
@@ -771,6 +782,7 @@ mod tests {
         // Test navigation validation
         let validation = provider
             .validate_navigation_path("Patient", "name.given")
+            .await
             .unwrap();
         assert!(!validation.is_valid);
         assert!(!validation.messages.is_empty());

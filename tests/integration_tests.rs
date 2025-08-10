@@ -139,8 +139,8 @@ impl conformance::ValidationRule for RequiredNameRule {
     }
 }
 
-#[test]
-fn test_model_provider_integration() {
+#[tokio::test]
+async fn test_model_provider_integration() {
     let provider = provider::EmptyModelProvider::new();
 
     // Test type reflection integration
@@ -168,12 +168,16 @@ fn test_model_provider_integration() {
             .any(|rule| rule.contains("name") && rule.contains("required"))
     );
 
-    // Test ModelProvider methods
-    let analysis = provider.analyze_expression("Patient.name.given").unwrap();
+    // Test ModelProvider methods (async)
+    let analysis = provider
+        .analyze_expression("Patient.name.given")
+        .await
+        .unwrap();
     assert!(analysis.referenced_types.is_empty()); // EmptyProvider returns empty
 
     let navigation_validation = provider
         .validate_navigation_path("Patient", "name.given")
+        .await
         .unwrap();
     assert!(!navigation_validation.is_valid); // EmptyProvider cannot validate
 }
@@ -379,14 +383,16 @@ fn test_performance_characteristics() {
     );
 }
 
-#[test]
-fn test_error_handling_integration() {
+#[tokio::test]
+async fn test_error_handling_integration() {
     // Test error propagation through the system
     let provider = provider::EmptyModelProvider::new();
 
-    // Test that EmptyProvider returns appropriate errors
+    // Test that EmptyProvider returns appropriate errors (async)
     let mock_value = MockPatientResource::new();
-    let result = provider.box_value_with_metadata(&mock_value, "Patient.name");
+    let result = provider
+        .box_value_with_metadata(&mock_value, "Patient.name")
+        .await;
     assert!(result.is_err());
 
     // Test constraint validation errors
