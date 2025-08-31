@@ -55,7 +55,7 @@ pub struct SearchParameter {
     pub description: Option<String>,
 }
 
-/// Polymorphic type information for choice[x] properties
+/// Polymorphic type information for choice\[x\] properties
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PolymorphicTypeInfo {
@@ -217,7 +217,7 @@ pub trait ModelProvider: Send + Sync + std::fmt::Debug {
         property_name: &str,
     ) -> Option<PrimitiveExtensionData>;
 
-    /// Check if a property is polymorphic (e.g., value[x])
+    /// Check if a property is polymorphic (e.g., value\[x\])
     fn is_polymorphic(&self, property: &str) -> bool {
         property.ends_with("[x]")
     }

@@ -70,6 +70,13 @@ pub enum ModelError {
         message: String,
     },
 
+    /// Configuration error
+    #[error("Invalid configuration: {message}")]
+    InvalidConfiguration {
+        /// Error message describing the configuration error
+        message: String,
+    },
+
     /// Network or I/O error
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
@@ -144,6 +151,13 @@ impl ModelError {
     /// Create a boxing error
     pub fn boxing_error(message: impl Into<String>) -> Self {
         Self::BoxingError {
+            message: message.into(),
+        }
+    }
+
+    /// Create an invalid configuration error
+    pub fn invalid_configuration(message: impl Into<String>) -> Self {
+        Self::InvalidConfiguration {
             message: message.into(),
         }
     }

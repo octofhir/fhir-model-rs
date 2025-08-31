@@ -33,6 +33,7 @@ pub mod boxing;
 pub mod conformance;
 pub mod constraints;
 pub mod error;
+pub mod fhirpath_engine;
 pub mod provider;
 pub mod reflection;
 
@@ -43,6 +44,10 @@ pub use conformance::{
 };
 pub use constraints::{ConstraintInfo, ConstraintResult, ConstraintViolation};
 pub use error::{ModelError, Result};
+pub use fhirpath_engine::{
+    BatchConstraintResult, BatchEvaluationMetrics, FhirPathEngine, FhirPathEngineCapabilities,
+    FhirPathEngineFactory, FhirPathEvaluationConfig, FhirPathEvaluationContext,
+};
 pub use provider::{
     FhirVersion, ModelProvider, PolymorphicTypeInfo, ResolutionContext, SearchParameter,
     StructureDefinition, ValueReflection,
