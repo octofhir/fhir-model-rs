@@ -5,6 +5,8 @@ use std::fmt;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::type_system::{ConversionInfo, PolymorphicContext};
+
 /// Type reflection information following FHIRPath specification
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -634,6 +636,341 @@ impl TypeReflectionInfo {
 
         rules
     }
+
+    // === NEW POLYMORPHIC METHODS FOR A1.5 ===
+
+    /// Check if this type supports a specific operation with given operand types
+    pub fn supports_operation(&self, operation: &str, operand_types: &[String]) -> bool {
+        match operation {
+            // FHIRPath comparison operations
+            "=" | "!=" | "~" | "!~" => {
+                // Most types support equality/inequality
+                operand_types.len() == 1
+            }
+            "<" | "<=" | ">" | ">=" => {
+                // Only ordered types support comparison
+                self.is_ordered_type() && operand_types.len() == 1
+            }
+            "+" | "-" | "*" | "/" => {
+                // Only numeric types support arithmetic
+                self.is_numeric_type() && operand_types.len() == 1
+            }
+            "and" | "or" | "xor" => {
+                // Boolean operations
+                self.is_boolean_type() && operand_types.len() == 1
+            }
+            "in" | "contains" => {
+                // Collection operations
+                operand_types.len() == 1
+            }
+            "is" | "as" => {
+                // Type checking operations - always supported
+                operand_types.len() == 1
+            }
+            _ => false,
+        }
+    }
+
+    /// Get all types that this type is compatible with
+    pub fn get_compatible_types(&self) -> Vec<String> {
+        let mut compatible = vec![self.qualified_name()];
+
+        // Add base type compatibility
+        if let Some(base) = self.base_type() {
+            compatible.push(base.to_string());
+        }
+
+        // Add system type conversions
+        if self.is_primitive() {
+            match self.name() {
+                "Integer" => {
+                    compatible.push("System.Decimal".to_string());
+                    compatible.push("System.String".to_string());
+                }
+                "Decimal" => {
+                    compatible.push("System.String".to_string());
+                }
+                "Boolean" => {
+                    compatible.push("System.String".to_string());
+                }
+                "Date" => {
+                    compatible.push("System.DateTime".to_string());
+                    compatible.push("System.String".to_string());
+                }
+                "DateTime" => {
+                    compatible.push("System.String".to_string());
+                }
+                "Time" => {
+                    compatible.push("System.String".to_string());
+                }
+                _ => {}
+            }
+        }
+
+        // All types can be converted to string in some way
+        if !compatible.contains(&"System.String".to_string()) {
+            compatible.push("System.String".to_string());
+        }
+
+        compatible
+    }
+
+    /// Check if this type can be converted to target type and return conversion info
+    pub fn can_convert_to(&self, target_type: &str) -> ConversionInfo {
+        // Check if target type is in our compatible types
+        let compatible_types = self.get_compatible_types();
+
+        if compatible_types.contains(&target_type.to_string()) {
+            // Determine conversion type
+            let conversion_type = if self.qualified_name() == target_type {
+                crate::type_system::ConversionType::Implicit // Same type
+            } else if self.is_primitive() && target_type == "System.String" {
+                crate::type_system::ConversionType::Function // toString()
+            } else if self.is_system_type_promotion(target_type) {
+                crate::type_system::ConversionType::Implicit // Safe promotion
+            } else {
+                crate::type_system::ConversionType::Explicit // Requires casting
+            };
+
+            ConversionInfo {
+                conversion_type,
+                conversion_function: self.get_conversion_function(target_type),
+                data_loss_possible: self.conversion_may_lose_data(target_type),
+                validation_rules: self.get_conversion_validation_rules(target_type),
+                performance_cost: self.get_conversion_cost(target_type),
+            }
+        } else {
+            // Conversion not supported
+            ConversionInfo {
+                conversion_type: crate::type_system::ConversionType::Forbidden,
+                conversion_function: None,
+                data_loss_possible: false,
+                validation_rules: vec![],
+                performance_cost: 0.0,
+            }
+        }
+    }
+
+    /// Get all polymorphic variants of this type
+    pub fn get_polymorphic_variants(&self) -> Vec<TypeReflectionInfo> {
+        let mut variants = vec![self.clone()];
+
+        // Add base type variants
+        if let Some(base) = self.base_type() {
+            variants.push(TypeReflectionInfo::simple_type(
+                self.namespace().unwrap_or(""),
+                base,
+            ));
+        }
+
+        // Add derived types (this would be populated from type registry in real implementation)
+        // For now, we'll add common FHIR type hierarchies
+        if self.is_fhir_type() {
+            match self.name() {
+                "Resource" => {
+                    variants.push(TypeReflectionInfo::simple_type("FHIR", "DomainResource"));
+                }
+                "DomainResource" => {
+                    variants.push(TypeReflectionInfo::simple_type("FHIR", "Patient"));
+                    variants.push(TypeReflectionInfo::simple_type("FHIR", "Observation"));
+                    variants.push(TypeReflectionInfo::simple_type("FHIR", "Practitioner"));
+                }
+                "Element" => {
+                    variants.push(TypeReflectionInfo::simple_type("FHIR", "BackboneElement"));
+                }
+                _ => {}
+            }
+        }
+
+        variants
+    }
+
+    /// Resolve choice type based on polymorphic context
+    pub fn resolve_choice_type(&self, context: &PolymorphicContext) -> Option<String> {
+        // If this type matches available types in context, return it
+        let type_name = self.qualified_name();
+        if context.available_types.contains(&type_name) {
+            return Some(type_name);
+        }
+
+        // Check if any compatible types are available
+        let compatible = self.get_compatible_types();
+        for available in &context.available_types {
+            if compatible.contains(available) {
+                return Some(available.clone());
+            }
+        }
+
+        // Use resolution strategy to pick from available types
+        match context.resolution_strategy {
+            crate::type_system::ResolutionStrategy::FirstMatch => {
+                context.available_types.first().cloned()
+            }
+            crate::type_system::ResolutionStrategy::MostSpecific => {
+                // Find most specific type (lowest in inheritance hierarchy)
+                self.find_most_specific_type(&context.available_types)
+            }
+            crate::type_system::ResolutionStrategy::MostCommon => {
+                // Use inference hints to find most common
+                self.find_most_common_type(context)
+            }
+            crate::type_system::ResolutionStrategy::ContextInferred => {
+                // Use context clues to infer type
+                self.infer_from_context(context)
+            }
+            crate::type_system::ResolutionStrategy::ExplicitOnly => {
+                // Don't resolve - require explicit specification
+                None
+            }
+            crate::type_system::ResolutionStrategy::ConfidenceBased => {
+                // Use inference hints with confidence scores
+                self.find_highest_confidence_type(context)
+            }
+        }
+    }
+
+    // === HELPER METHODS FOR POLYMORPHIC OPERATIONS ===
+
+    /// Check if this is an ordered type (supports <, >, etc.)
+    fn is_ordered_type(&self) -> bool {
+        self.is_primitive()
+            && matches!(
+                self.name(),
+                "Integer" | "Decimal" | "Date" | "DateTime" | "Time" | "String"
+            )
+    }
+
+    /// Check if this is a numeric type
+    fn is_numeric_type(&self) -> bool {
+        self.is_primitive() && matches!(self.name(), "Integer" | "Decimal")
+    }
+
+    /// Check if this is a boolean type
+    fn is_boolean_type(&self) -> bool {
+        self.is_primitive() && self.name() == "Boolean"
+    }
+
+    /// Check if conversion to target is a safe system type promotion
+    fn is_system_type_promotion(&self, target_type: &str) -> bool {
+        if !self.is_primitive() {
+            return false;
+        }
+
+        matches!(
+            (self.name(), target_type),
+            ("Integer", "System.Decimal") | ("Date", "System.DateTime")
+        )
+    }
+
+    /// Get conversion function name if needed
+    fn get_conversion_function(&self, target_type: &str) -> Option<String> {
+        if self.is_primitive() && target_type == "System.String" {
+            Some("toString".to_string())
+        } else if target_type.contains("Integer") {
+            Some("toInteger".to_string())
+        } else if target_type.contains("Decimal") {
+            Some("toDecimal".to_string())
+        } else if target_type.contains("Boolean") {
+            Some("toBoolean".to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Check if conversion may lose data
+    fn conversion_may_lose_data(&self, target_type: &str) -> bool {
+        match (self.name(), target_type) {
+            ("Decimal", "System.Integer") => true, // May lose fractional part
+            ("DateTime", "System.Date") => true,   // May lose time component
+            ("String", _) if target_type != "System.String" => true, // Parsing may fail
+            _ => false,
+        }
+    }
+
+    /// Get validation rules for conversion
+    fn get_conversion_validation_rules(
+        &self,
+        target_type: &str,
+    ) -> Vec<crate::type_system::ValidationRule> {
+        let mut rules = vec![];
+
+        if target_type.contains("Integer") && self.name() == "String" {
+            rules.push(crate::type_system::ValidationRule {
+                rule_id: "string-to-integer".to_string(),
+                description: "String must contain valid integer".to_string(),
+                validation_expression: Some("matches('^-?\\\\d+$')".to_string()),
+                error_message: "Invalid integer format".to_string(),
+            });
+        }
+
+        rules
+    }
+
+    /// Get performance cost of conversion (0.0 = free, 1.0 = expensive)
+    fn get_conversion_cost(&self, target_type: &str) -> f32 {
+        match (self.name(), target_type) {
+            (a, b) if a == b => 0.0,              // Same type = free
+            ("Integer", "System.Decimal") => 0.1, // Simple promotion
+            (_, "System.String") => 0.2,          // String conversion
+            ("String", _) => 0.5,                 // Parsing is more expensive
+            _ => 0.3,
+        }
+    }
+
+    /// Find most specific type from available types
+    fn find_most_specific_type(&self, available_types: &[String]) -> Option<String> {
+        // In real implementation, would use type hierarchy
+        // For now, prefer non-base types
+        for type_name in available_types {
+            if !type_name.contains("Element") && !type_name.contains("Resource") {
+                return Some(type_name.clone());
+            }
+        }
+        available_types.first().cloned()
+    }
+
+    /// Find most common type based on usage statistics
+    fn find_most_common_type(&self, context: &PolymorphicContext) -> Option<String> {
+        // Use inference hints with statistical type
+        for hint in &context.inference_hints {
+            if hint.hint_type == crate::type_system::InferenceHintType::Statistical
+                && context.available_types.contains(&hint.suggested_type)
+            {
+                return Some(hint.suggested_type.clone());
+            }
+        }
+        None
+    }
+
+    /// Infer type from context clues
+    fn infer_from_context(&self, context: &PolymorphicContext) -> Option<String> {
+        // Use contextual hints
+        for hint in &context.inference_hints {
+            if hint.hint_type == crate::type_system::InferenceHintType::Contextual
+                && context.available_types.contains(&hint.suggested_type)
+            {
+                return Some(hint.suggested_type.clone());
+            }
+        }
+        None
+    }
+
+    /// Find type with highest confidence score
+    fn find_highest_confidence_type(&self, context: &PolymorphicContext) -> Option<String> {
+        let mut best_type: Option<String> = None;
+        let mut best_confidence = 0.0;
+
+        for hint in &context.inference_hints {
+            if context.available_types.contains(&hint.suggested_type)
+                && hint.confidence > best_confidence
+            {
+                best_type = Some(hint.suggested_type.clone());
+                best_confidence = hint.confidence;
+            }
+        }
+
+        best_type
+    }
 }
 
 impl fmt::Display for TypeReflectionInfo {
@@ -855,5 +1192,124 @@ mod tests {
                 .iter()
                 .any(|rule| rule.contains("name") && rule.contains("required"))
         );
+    }
+
+    #[test]
+    fn test_operation_support() {
+        let integer_type = TypeReflectionInfo::simple_type("System", "Integer");
+        let string_type = TypeReflectionInfo::simple_type("System", "String");
+        let boolean_type = TypeReflectionInfo::simple_type("System", "Boolean");
+
+        // Integer supports arithmetic operations
+        assert!(integer_type.supports_operation("+", &["System.Integer".to_string()]));
+        assert!(integer_type.supports_operation("<", &["System.Integer".to_string()]));
+        assert!(!integer_type.supports_operation("and", &["System.Boolean".to_string()]));
+
+        // Boolean supports logical operations
+        assert!(boolean_type.supports_operation("and", &["System.Boolean".to_string()]));
+        assert!(!boolean_type.supports_operation("+", &["System.Integer".to_string()]));
+
+        // All types support type checking operations
+        assert!(string_type.supports_operation("is", &["System.String".to_string()]));
+        assert!(integer_type.supports_operation("as", &["System.Decimal".to_string()]));
+    }
+
+    #[test]
+    fn test_compatible_types() {
+        let integer_type = TypeReflectionInfo::simple_type("System", "Integer");
+        let compatible = integer_type.get_compatible_types();
+
+        assert!(compatible.contains(&"System.Integer".to_string()));
+        assert!(compatible.contains(&"System.Decimal".to_string()));
+        assert!(compatible.contains(&"System.String".to_string()));
+    }
+
+    #[test]
+    fn test_conversion_info() {
+        let integer_type = TypeReflectionInfo::simple_type("System", "Integer");
+
+        // Conversion to Decimal should be implicit
+        let decimal_conversion = integer_type.can_convert_to("System.Decimal");
+        assert_eq!(
+            decimal_conversion.conversion_type,
+            crate::type_system::ConversionType::Implicit
+        );
+        assert!(!decimal_conversion.data_loss_possible);
+
+        // Conversion to String should use toString function
+        let string_conversion = integer_type.can_convert_to("System.String");
+        assert_eq!(
+            string_conversion.conversion_type,
+            crate::type_system::ConversionType::Function
+        );
+        assert_eq!(
+            string_conversion.conversion_function,
+            Some("toString".to_string())
+        );
+
+        // Forbidden conversion
+        let forbidden = integer_type.can_convert_to("System.Date");
+        assert_eq!(
+            forbidden.conversion_type,
+            crate::type_system::ConversionType::Forbidden
+        );
+    }
+
+    #[test]
+    fn test_polymorphic_variants() {
+        let derived_type =
+            TypeReflectionInfo::simple_type_with_base("FHIR", "Patient", "DomainResource");
+        let variants = derived_type.get_polymorphic_variants();
+
+        assert!(variants.len() >= 2);
+        assert!(variants.iter().any(|v| v.name() == "Patient"));
+        assert!(variants.iter().any(|v| v.name() == "DomainResource"));
+    }
+
+    #[test]
+    fn test_choice_type_resolution() {
+        use crate::type_system::{
+            InferenceHint, InferenceHintType, PolymorphicContext, ResolutionStrategy,
+        };
+
+        let string_type = TypeReflectionInfo::simple_type("System", "String");
+
+        // Create context with available types
+        let context = PolymorphicContext {
+            current_path: "Patient.name".to_string(),
+            base_type: "Patient".to_string(),
+            available_types: vec!["System.String".to_string(), "System.Integer".to_string()],
+            constraints: vec![],
+            inference_hints: vec![InferenceHint {
+                hint_type: InferenceHintType::Statistical,
+                suggested_type: "System.String".to_string(),
+                confidence: 0.8,
+                reasoning: "Most common for name fields".to_string(),
+            }],
+            resolution_strategy: ResolutionStrategy::MostCommon,
+            metadata: std::collections::HashMap::new(),
+        };
+
+        let resolved = string_type.resolve_choice_type(&context);
+        assert_eq!(resolved, Some("System.String".to_string()));
+    }
+
+    #[test]
+    fn test_type_helper_methods() {
+        let integer_type = TypeReflectionInfo::simple_type("System", "Integer");
+        let string_type = TypeReflectionInfo::simple_type("System", "String");
+        let boolean_type = TypeReflectionInfo::simple_type("System", "Boolean");
+
+        assert!(integer_type.is_numeric_type());
+        assert!(!integer_type.is_boolean_type());
+        assert!(integer_type.is_ordered_type());
+
+        assert!(!string_type.is_numeric_type());
+        assert!(!string_type.is_boolean_type());
+        assert!(string_type.is_ordered_type()); // Strings are ordered
+
+        assert!(!boolean_type.is_numeric_type());
+        assert!(boolean_type.is_boolean_type());
+        assert!(!boolean_type.is_ordered_type()); // Booleans are not ordered
     }
 }

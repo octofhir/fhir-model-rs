@@ -63,13 +63,6 @@ pub enum ModelError {
         actual: String,
     },
 
-    /// Boxing/unboxing error
-    #[error("Boxing error: {message}")]
-    BoxingError {
-        /// Error message describing the boxing failure
-        message: String,
-    },
-
     /// Configuration error
     #[error("Invalid configuration: {message}")]
     InvalidConfiguration {
@@ -145,13 +138,6 @@ impl ModelError {
         Self::TypeIncompatibility {
             expected: expected.into(),
             actual: actual.into(),
-        }
-    }
-
-    /// Create a boxing error
-    pub fn boxing_error(message: impl Into<String>) -> Self {
-        Self::BoxingError {
-            message: message.into(),
         }
     }
 

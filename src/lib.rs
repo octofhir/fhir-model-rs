@@ -17,43 +17,52 @@
 //! # Example
 //!
 //! ```rust
-//! use octofhir_fhir_model::{ModelProvider, TypeReflectionInfo, FhirVersion};
+//! use octofhir_fhir_model::{TypeReflectionInfo, ChoiceTypeDefinition};
 //!
-//! // ModelProvider implementations provide type information
-//! fn example_usage(provider: &dyn ModelProvider) {
-//!     if let Some(type_info) = provider.get_type_reflection("Patient") {
-//!         println!("Patient type: {:?}", type_info);
-//!     }
-//! }
+//! // Create type reflection for a FHIR type
+//! let type_info = TypeReflectionInfo::simple_type("FHIR", "Patient");
+//! println!("Patient type: {:?}", type_info);
+//!
+//! // Create choice type definition for value[x]
+//! let choice_def = ChoiceTypeDefinition::new("value", "value[x]");
+//! println!("Choice type: {:?}", choice_def);
 //! ```
 
 #![warn(missing_docs)]
 
-pub mod boxing;
+pub mod choice_types;
 pub mod conformance;
 pub mod constraints;
 pub mod error;
-pub mod fhirpath_engine;
+pub mod fhirpath_types;
+pub mod navigation;
 pub mod provider;
 pub mod reflection;
+pub mod type_system;
 
 // Re-export core types
-pub use boxing::{BoxedFhirPathValue, Extension, PrimitiveExtension, SourceLocation};
+pub use choice_types::{
+    ChoiceConstraint, ChoiceExpansion, ChoiceTypeDefinition, ChoiceTypeOption, ExpandedPath,
+    InferenceRule, ResolutionStrategy, TypeCandidate, TypeInference, TypeInferenceResult,
+};
 pub use conformance::{
     ConformanceResult, ConformanceViolation, ConformanceWarning, ViolationSeverity,
 };
 pub use constraints::{ConstraintInfo, ConstraintResult, ConstraintViolation};
 pub use error::{ModelError, Result};
-pub use fhirpath_engine::{
-    BatchConstraintResult, BatchEvaluationMetrics, FhirPathEngine, FhirPathEngineCapabilities,
-    FhirPathEngineFactory, FhirPathEvaluationConfig, FhirPathEvaluationContext,
+pub use fhirpath_types::{
+    DependencyGraph, ExpressionTypeAnalysis, PerformanceImpact, TypeCheckResult, TypeDependency,
+    TypeError, TypeFix, TypeOperation, TypeReference, TypeWarning,
 };
-pub use provider::{
-    FhirVersion, ModelProvider, PolymorphicTypeInfo, ResolutionContext, SearchParameter,
-    StructureDefinition, ValueReflection,
+pub use navigation::{
+    NavigationPath, NavigationResult, NavigationSegment, NavigationStep, NavigationType,
+    OptimizationHint, PathValidation, SegmentType,
 };
-pub use reflection::{
-    ElementInfo, TupleElementInfo, TypeHierarchy, TypeReflectionInfo, TypeSuggestion,
+pub use provider::{EmptyModelProvider, FhirVersion, ModelProvider};
+pub use reflection::{ElementInfo, TupleElementInfo, TypeReflectionInfo, TypeSuggestion};
+pub use type_system::{
+    Cardinality, CollectionSemantics, NavigationMetadata, PolymorphicContext,
+    PolymorphicResolution, SingletonEvaluation, TypeCompatibilityMatrix, TypeHierarchy,
 };
 
 /// Version information for this crate
