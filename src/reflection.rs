@@ -62,6 +62,8 @@ pub struct ElementInfo {
     pub is_modifier: bool,
     /// Whether this element appears in summaries
     pub is_summary: bool,
+    /// Whether this element is one-based indexed (FHIRPath ClassInfoElement compliance)
+    pub is_one_based: bool,
     /// Element documentation
     pub documentation: Option<String>,
 }
@@ -285,6 +287,7 @@ impl ElementInfo {
             max_cardinality: Some(1),
             is_modifier: false,
             is_summary: false,
+            is_one_based: false,
             documentation: None,
         }
     }
@@ -311,6 +314,12 @@ impl ElementInfo {
     /// Add documentation
     pub fn with_documentation(mut self, doc: impl Into<String>) -> Self {
         self.documentation = Some(doc.into());
+        self
+    }
+
+    /// Mark as one-based indexed
+    pub fn with_one_based(mut self) -> Self {
+        self.is_one_based = true;
         self
     }
 
