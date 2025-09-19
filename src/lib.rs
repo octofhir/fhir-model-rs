@@ -17,53 +17,50 @@
 //! # Example
 //!
 //! ```rust
-//! use octofhir_fhir_model::{TypeReflectionInfo, ChoiceTypeDefinition};
+//! use octofhir_fhir_model::{TypeInfo, EmptyModelProvider, ModelProvider};
 //!
-//! // Create type reflection for a FHIR type
-//! let type_info = TypeReflectionInfo::simple_type("FHIR", "Patient");
+//! // Create type info for a FHIR type
+//! let type_info = TypeInfo::system_type("Patient".to_string(), true);
 //! println!("Patient type: {:?}", type_info);
 //!
-//! // Create choice type definition for value[x]
-//! let choice_def = ChoiceTypeDefinition::new("value", "value[x]");
-//! println!("Choice type: {:?}", choice_def);
+//! // Use empty model provider for testing
+//! let provider = EmptyModelProvider::default();
+//! println!("Provider: {:?}", provider);
 //! ```
 
 #![warn(missing_docs)]
 
-pub mod choice_types;
-pub mod conformance;
-pub mod constraints;
 pub mod error;
-pub mod fhirpath_types;
-pub mod navigation;
+pub mod evaluation;
+pub mod evaluator;
+pub mod fhir_traits;
 pub mod provider;
-pub mod reflection;
-pub mod type_system;
+pub mod terminology;
 
 // Re-export core types
-pub use choice_types::{
-    ChoiceConstraint, ChoiceExpansion, ChoiceTypeDefinition, ChoiceTypeOption, ExpandedPath,
-    InferenceRule, ResolutionStrategy, TypeCandidate, TypeInference, TypeInferenceResult,
-};
-pub use conformance::{
-    ConformanceResult, ConformanceViolation, ConformanceWarning, ViolationSeverity,
-};
-pub use constraints::{ConstraintInfo, ConstraintResult, ConstraintViolation};
 pub use error::{ModelError, Result};
-pub use fhirpath_types::{
-    DependencyGraph, ExpressionTypeAnalysis, PerformanceImpact, TypeCheckResult, TypeDependency,
-    TypeError, TypeFix, TypeOperation, TypeReference, TypeWarning,
+pub use evaluation::{
+    EvaluationResult, IntoEvaluationResult, TypeInfoResult, convert_value_to_evaluation_result,
 };
-pub use navigation::{
-    NavigationPath, NavigationResult, NavigationSegment, NavigationStep, NavigationType,
-    OptimizationHint, PathValidation, SegmentType,
+pub use evaluator::{
+    CompiledExpression, ErrorSeverity, FhirPathConstraint, FhirPathEvaluator,
+    FhirPathEvaluatorFactory, ValidationError, ValidationProvider, ValidationResult,
+    ValidationWarning, Variables,
 };
-pub use provider::{EmptyModelProvider, FhirVersion, ModelProvider};
-pub use reflection::{ElementInfo, TupleElementInfo, TypeReflectionInfo, TypeSuggestion};
-pub use type_system::{
-    Cardinality, CollectionSemantics, NavigationMetadata, PolymorphicContext,
-    PolymorphicResolution, SingletonEvaluation, TypeCompatibilityMatrix, TypeHierarchy,
+pub use fhir_traits::{
+    BackboneElement, ChoiceElement, FhirPrimitive, FhirReference, FhirResourceMetadata, ToFhirJson,
 };
+pub use provider::{
+    ElementInfo, EmptyModelProvider, FhirVersion, LiteModelProvider, ModelProvider, TypeInfo,
+};
+pub use terminology::{
+    ConnectionStatus, EquivalenceLevel, ExpansionParameter, ExpansionParameters,
+    NoOpTerminologyProvider, TerminologyProvider, TranslationResult, TranslationTarget,
+    ValueSetConcept, ValueSetExpansion,
+};
+
+#[cfg(feature = "http-client")]
+pub use terminology::HttpTerminologyProvider;
 
 /// Version information for this crate
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

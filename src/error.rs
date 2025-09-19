@@ -79,6 +79,13 @@ pub enum ModelError {
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
 
+    /// FHIRPath evaluation error
+    #[error("FHIRPath evaluation error: {message}")]
+    EvaluationError {
+        /// Error message describing the evaluation failure
+        message: String,
+    },
+
     /// Generic error with message
     #[error("Model error: {message}")]
     Generic {
@@ -144,6 +151,13 @@ impl ModelError {
     /// Create an invalid configuration error
     pub fn invalid_configuration(message: impl Into<String>) -> Self {
         Self::InvalidConfiguration {
+            message: message.into(),
+        }
+    }
+
+    /// Create an evaluation error
+    pub fn evaluation_error(message: impl Into<String>) -> Self {
+        Self::EvaluationError {
             message: message.into(),
         }
     }

@@ -1,174 +1,142 @@
 //! ModelProvider trait for FHIR model access
 //!
-//! This module provides the ModelProvider trait using only types that exist in the codebase.
+//! This module provides the core ModelProvider trait for FHIRPath evaluation.
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use async_trait::async_trait;
-use serde_json::Value as JsonValue;
 
-// Import only the types that actually exist in our codebase
-use crate::choice_types::{ChoiceExpansion, ChoiceTypeDefinition, TypeInference};
-use crate::conformance::ConformanceResult;
-use crate::constraints::ConstraintInfo;
 use crate::error::Result;
-use crate::fhirpath_types::{ExpressionTypeAnalysis, TypeCheckResult, TypeDependency};
-use crate::navigation::{NavigationResult, OptimizationHint, PathValidation};
-use crate::reflection::TypeReflectionInfo;
-use crate::type_system::{
-    CollectionSemantics, NavigationMetadata, PolymorphicContext, PolymorphicResolution,
-    TypeCompatibilityMatrix, TypeHierarchy,
-};
+use crate::evaluation::{EvaluationResult, IntoEvaluationResult, TypeInfoResult};
 
 /// Core trait for accessing FHIR model information
+///
+/// Core trait for accessing FHIR model information during FHIRPath evaluation
 #[async_trait]
 pub trait ModelProvider: Send + Sync + std::fmt::Debug {
-    // ========================================================================
-    // Core Type Operations
-    // ========================================================================
+    /// Core type lookup
+    async fn get_type(&self, type_name: &str) -> Result<Option<TypeInfo>>;
 
-    /// Get type hierarchy information for a specific type
-    async fn get_type_hierarchy(&self, type_name: &str) -> Result<Option<TypeHierarchy>>;
-
-    /// Check compatibility between two types
-    async fn is_type_compatible(&self, from_type: &str, to_type: &str) -> Result<bool>;
-
-    /// Get common supertype for a set of types
-    async fn get_common_supertype(&self, types: &[String]) -> Result<Option<String>>;
-
-    /// Get type compatibility matrix
-    async fn get_type_compatibility_matrix(&self) -> Result<TypeCompatibilityMatrix>;
-
-    // ========================================================================
-    // Navigation Operations
-    // ========================================================================
-
-    /// Navigate a typed path and return result
-    async fn navigate_typed_path(&self, base_type: &str, path: &str) -> Result<NavigationResult>;
-
-    /// Validate navigation path for type safety
-    async fn validate_navigation_safety(
+    /// Get element type from complex type
+    async fn get_element_type(
         &self,
-        base_type: &str,
-        path: &str,
-    ) -> Result<PathValidation>;
+        parent_type: &TypeInfo,
+        property_name: &str,
+    ) -> Result<Option<TypeInfo>>;
 
-    /// Get expected result type from navigation
-    async fn get_navigation_result_type(
-        &self,
-        base_type: &str,
-        path: &str,
-    ) -> Result<Option<TypeReflectionInfo>>;
+    /// Get type from union type
+    fn of_type(&self, type_info: &TypeInfo, target_type: &str) -> Option<TypeInfo>;
 
-    /// Get navigation metadata
-    async fn get_navigation_metadata(
-        &self,
-        base_type: &str,
-        path: &str,
-    ) -> Result<NavigationMetadata>;
+    /// Get element names from complex type
+    fn get_element_names(&self, parent_type: &TypeInfo) -> Vec<String>;
 
-    // ========================================================================
-    // Choice Type Operations
-    // ========================================================================
+    /// Returns a union type of all possible child element types
+    async fn get_children_type(&self, parent_type: &TypeInfo) -> Result<Option<TypeInfo>>;
 
-    /// Resolve choice type in given context
-    async fn resolve_choice_type(
-        &self,
-        base_path: &str,
-        context: &PolymorphicContext,
-    ) -> Result<PolymorphicResolution>;
+    /// Get detailed information about elements of a type for completion suggestions
+    async fn get_elements(&self, type_name: &str) -> Result<Vec<ElementInfo>>;
 
-    /// Get choice type expansions
-    async fn get_choice_expansions(&self, choice_property: &str) -> Result<Vec<ChoiceExpansion>>;
+    /// Get list of all resource types
+    async fn get_resource_types(&self) -> Result<Vec<String>>;
 
-    /// Infer choice type from context
-    async fn infer_choice_type(&self, context: &PolymorphicContext) -> Result<TypeInference>;
+    /// Get list of all complex types
+    async fn get_complex_types(&self) -> Result<Vec<String>>;
 
-    /// Get choice type definition
-    async fn get_choice_type_definition(
-        &self,
-        base_path: &str,
-    ) -> Result<Option<ChoiceTypeDefinition>>;
+    /// Get list of all primitive types
+    async fn get_primitive_types(&self) -> Result<Vec<String>>;
 
-    // ========================================================================
-    // FHIRPath Functions
-    // ========================================================================
-
-    /// Check conformance to profile
-    async fn conforms_to_profile(&self, profile_url: &str) -> Result<ConformanceResult>;
-
-    /// Analyze expression for type information
-    async fn analyze_expression_types(&self, expression: &str) -> Result<ExpressionTypeAnalysis>;
-
-    /// Validate FHIRPath expression
-    async fn validate_fhirpath_expression(
-        &self,
-        expression: &str,
-        base_type: &str,
-    ) -> Result<TypeCheckResult>;
-
-    /// Get expression dependencies
-    async fn get_expression_dependencies(&self, expression: &str) -> Result<Vec<TypeDependency>>;
-
-    // ========================================================================
-    // Advanced Operations
-    // ========================================================================
-
-    /// Get collection semantics for a type
-    async fn get_collection_semantics(&self, type_name: &str) -> Result<CollectionSemantics>;
-
-    /// Get optimization hints
-    async fn get_optimization_hints(&self, expression: &str) -> Result<Vec<OptimizationHint>>;
-
-    /// Clear caches
-    async fn clear_caches(&self) -> Result<()>;
-
-    // ========================================================================
-    // Core Information Methods
-    // ========================================================================
-
-    /// Get type reflection information
-    async fn get_type_reflection(&self, type_name: &str) -> Result<Option<TypeReflectionInfo>>;
-
-    /// Get constraint information
-    async fn get_constraints(&self, type_name: &str) -> Result<Vec<ConstraintInfo>>;
-
-    /// Get FHIR version
-    fn get_fhir_version(&self) -> FhirVersion;
-
-    /// Get supported resource types
-    async fn get_supported_resource_types(&self) -> Result<Vec<String>>;
-
-    /// O(1) check if a resource type exists in the converted schemas
-    /// IMPORTANT: This should use data extracted from schemas, not hardcoded lists
-    fn resource_type_exists(&self, _resource_type: &str) -> Result<bool> {
-        // Default implementation for backward compatibility
-        // Implementors should override this for O(1) performance
-        Ok(false)
+    /// Check if a resource type exists
+    async fn resource_type_exists(&self, resource_type: &str) -> Result<bool> {
+        let resource_types = self.get_resource_types().await?;
+        Ok(resource_types.contains(&resource_type.to_string()))
     }
 
-    /// Refresh resource types cache from current schema storage
-    /// IMPORTANT: This should re-extract data from schemas, ensuring no stale hardcoded data
-    async fn refresh_resource_types(&self) -> Result<()> {
-        // Default implementation - no-op for backward compatibility
-        Ok(())
+    /// Get the FHIR version supported by this provider
+    async fn get_fhir_version(&self) -> Result<FhirVersion> {
+        // Default implementation returns R4
+        Ok(FhirVersion::R4)
     }
 
-    // ========================================================================
-    // Resource Resolution (FHIRPath resolve())
-    // ========================================================================
-    /// Resolve a reference string to a resource JSON, if available.
-    ///
-    /// Implementors may resolve against in-memory caches, Bundles, or external servers.
-    /// Default implementation returns Ok(None).
-    async fn resolve_reference(
+    /// Check if one type is derived from another using schema hierarchy
+    /// Default implementation - override in concrete providers with actual schema data
+    fn is_type_derived_from(&self, derived_type: &str, base_type: &str) -> bool {
+        // Default implementation for base trait - just direct equality
+        derived_type == base_type
+    }
+
+    /// Get choice type metadata for a property (valueX patterns)
+    async fn get_choice_types(
         &self,
-        _reference: &str,
-        _base_context: Option<&JsonValue>,
-    ) -> Result<Option<JsonValue>> {
+        parent_type: &str,
+        property_name: &str,
+    ) -> Result<Option<Vec<ChoiceTypeInfo>>> {
+        let _ = (parent_type, property_name);
         Ok(None)
     }
+
+    /// Get union type information for a type
+    async fn get_union_types(&self, type_info: &TypeInfo) -> Result<Option<Vec<TypeInfo>>> {
+        let _ = type_info;
+        Ok(None)
+    }
+
+    /// Check if a type is a union type
+    fn is_union_type(&self, type_info: &TypeInfo) -> bool {
+        let _ = type_info;
+        false
+    }
+}
+
+/// Type information structure for FHIR elements
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct TypeInfo {
+    /// FHIRPath type name ('Any', 'Boolean', 'String', 'Integer', etc.)
+    pub type_name: String,
+    /// Single value vs collection (optional, defaults to true)
+    pub singleton: Option<bool>,
+    /// Indicates this is definitely an empty collection
+    pub is_empty: Option<bool>,
+    /// Model type namespace ('FHIR', 'System', etc.)
+    pub namespace: Option<String>,
+    /// Model type name (Patient, string, etc.)
+    pub name: Option<String>,
+}
+
+impl TypeInfo {
+    /// Create a system type
+    pub fn system_type(type_name: String, singleton: bool) -> Self {
+        Self {
+            type_name: type_name.clone(),
+            singleton: Some(singleton),
+            is_empty: Some(false),
+            namespace: Some("System".to_string()),
+            name: Some(type_name),
+        }
+    }
+}
+
+/// Element information for completion suggestions
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ElementInfo {
+    /// Element name
+    pub name: String,
+    /// Element type
+    pub element_type: String,
+    /// Documentation/description
+    pub documentation: Option<String>,
+}
+
+/// Choice type information for valueX properties
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ChoiceTypeInfo {
+    /// The suffix for the property (e.g., "String" for valueString)
+    pub suffix: String,
+    /// The FHIR type name (e.g., "string")
+    pub type_name: String,
 }
 
 /// FHIR version enumeration
@@ -190,139 +158,265 @@ pub enum FhirVersion {
     },
 }
 
-// ============================================================================
-// Empty ModelProvider Implementation
-// ============================================================================
-
 /// Empty implementation of ModelProvider for testing and default behavior
 #[derive(Debug, Clone, Default)]
 pub struct EmptyModelProvider;
 
 #[async_trait]
 impl ModelProvider for EmptyModelProvider {
-    async fn get_type_hierarchy(&self, _type_name: &str) -> Result<Option<TypeHierarchy>> {
-        Ok(None)
+    async fn get_type(&self, type_name: &str) -> Result<Option<TypeInfo>> {
+        match type_name {
+            "Patient" | "Observation" | "Practitioner" | "Organization" => Ok(Some(TypeInfo {
+                type_name: "Any".to_string(),
+                singleton: Some(true),
+                is_empty: Some(false),
+                namespace: Some("FHIR".to_string()),
+                name: Some(type_name.to_string()),
+            })),
+            "Boolean" => Ok(Some(TypeInfo {
+                type_name: "Boolean".to_string(),
+                singleton: Some(true),
+                is_empty: Some(false),
+                namespace: Some("System".to_string()),
+                name: Some("Boolean".to_string()),
+            })),
+            "String" => Ok(Some(TypeInfo {
+                type_name: "String".to_string(),
+                singleton: Some(true),
+                is_empty: Some(false),
+                namespace: Some("System".to_string()),
+                name: Some("String".to_string()),
+            })),
+            "Integer" => Ok(Some(TypeInfo {
+                type_name: "Integer".to_string(),
+                singleton: Some(true),
+                is_empty: Some(false),
+                namespace: Some("System".to_string()),
+                name: Some("Integer".to_string()),
+            })),
+            "Decimal" => Ok(Some(TypeInfo {
+                type_name: "Decimal".to_string(),
+                singleton: Some(true),
+                is_empty: Some(false),
+                namespace: Some("System".to_string()),
+                name: Some("Decimal".to_string()),
+            })),
+            _ => Ok(None),
+        }
     }
 
-    async fn is_type_compatible(&self, _from_type: &str, _to_type: &str) -> Result<bool> {
-        Ok(false)
-    }
-
-    async fn get_common_supertype(&self, _types: &[String]) -> Result<Option<String>> {
-        Ok(None)
-    }
-
-    async fn get_type_compatibility_matrix(&self) -> Result<TypeCompatibilityMatrix> {
-        Ok(TypeCompatibilityMatrix::new())
-    }
-
-    async fn navigate_typed_path(&self, _base_type: &str, _path: &str) -> Result<NavigationResult> {
-        Ok(NavigationResult::success(TypeReflectionInfo::simple_type(
-            "FHIR", "Unknown",
-        )))
-    }
-
-    async fn validate_navigation_safety(
+    async fn get_element_type(
         &self,
-        base_type: &str,
-        path: &str,
-    ) -> Result<PathValidation> {
-        Ok(PathValidation::success(format!("{base_type}.{path}")))
+        parent_type: &TypeInfo,
+        property_name: &str,
+    ) -> Result<Option<TypeInfo>> {
+        match (
+            parent_type
+                .name
+                .as_deref()
+                .unwrap_or(&parent_type.type_name),
+            property_name,
+        ) {
+            ("Patient", "name") => Ok(Some(TypeInfo {
+                type_name: "Any".to_string(),
+                singleton: Some(false),
+                is_empty: Some(false),
+                namespace: Some("FHIR".to_string()),
+                name: Some("HumanName".to_string()),
+            })),
+            ("HumanName", "given") => Ok(Some(TypeInfo {
+                type_name: "String".to_string(),
+                singleton: Some(false),
+                is_empty: Some(false),
+                namespace: Some("System".to_string()),
+                name: Some("String".to_string()),
+            })),
+            _ => Ok(None),
+        }
     }
 
-    async fn get_navigation_result_type(
+    fn of_type(&self, type_info: &TypeInfo, target_type: &str) -> Option<TypeInfo> {
+        // Direct type match
+        if type_info.type_name == target_type {
+            return Some(type_info.clone());
+        }
+
+        // Name match
+        if let Some(ref name) = type_info.name {
+            if name == target_type {
+                return Some(type_info.clone());
+            }
+            // Check type hierarchy using is_type_derived_from
+            if self.is_type_derived_from(name, target_type) {
+                return Some(type_info.clone());
+            }
+        }
+
+        // Check if type_name derives from target_type
+        if self.is_type_derived_from(&type_info.type_name, target_type) {
+            return Some(type_info.clone());
+        }
+
+        None
+    }
+
+    fn is_type_derived_from(&self, derived_type: &str, base_type: &str) -> bool {
+        if derived_type == base_type {
+            return true;
+        }
+
+        // Minimal type hierarchy for testing - in real implementation this comes from schemas
+        matches!(
+            (derived_type, base_type),
+            ("code" | "id" | "uri", "string")
+                | ("Patient", "DomainResource")
+                | ("DomainResource", "Resource")
+        )
+    }
+
+    fn get_element_names(&self, parent_type: &TypeInfo) -> Vec<String> {
+        match parent_type
+            .name
+            .as_deref()
+            .unwrap_or(&parent_type.type_name)
+        {
+            "Patient" => vec![
+                "id".to_string(),
+                "name".to_string(),
+                "gender".to_string(),
+                "birthDate".to_string(),
+            ],
+            "HumanName" => vec!["given".to_string(), "family".to_string(), "use".to_string()],
+            "Observation" => vec![
+                "id".to_string(),
+                "status".to_string(),
+                "code".to_string(),
+                "value".to_string(),
+                "subject".to_string(),
+            ],
+            _ => Vec::new(),
+        }
+    }
+
+    async fn get_children_type(&self, parent_type: &TypeInfo) -> Result<Option<TypeInfo>> {
+        if parent_type.singleton.unwrap_or(true) {
+            Ok(None)
+        } else {
+            Ok(Some(TypeInfo {
+                type_name: parent_type.type_name.clone(),
+                singleton: Some(true),
+                is_empty: Some(false),
+                namespace: parent_type.namespace.clone(),
+                name: parent_type.name.clone(),
+            }))
+        }
+    }
+
+    async fn get_elements(&self, type_name: &str) -> Result<Vec<ElementInfo>> {
+        match type_name {
+            "Patient" => Ok(vec![
+                ElementInfo {
+                    name: "id".to_string(),
+                    element_type: "id".to_string(),
+                    documentation: Some("Logical id of this artifact".to_string()),
+                },
+                ElementInfo {
+                    name: "name".to_string(),
+                    element_type: "HumanName[]".to_string(),
+                    documentation: Some("A name associated with the patient".to_string()),
+                },
+            ]),
+            _ => Ok(Vec::new()),
+        }
+    }
+
+    async fn get_resource_types(&self) -> Result<Vec<String>> {
+        Ok(vec![
+            "Patient".to_string(),
+            "Observation".to_string(),
+            "Practitioner".to_string(),
+            "Organization".to_string(),
+        ])
+    }
+
+    async fn get_complex_types(&self) -> Result<Vec<String>> {
+        Ok(vec![
+            "HumanName".to_string(),
+            "Address".to_string(),
+            "ContactPoint".to_string(),
+            "CodeableConcept".to_string(),
+            "Quantity".to_string(),
+        ])
+    }
+
+    async fn get_primitive_types(&self) -> Result<Vec<String>> {
+        Ok(vec![
+            "Boolean".to_string(),
+            "String".to_string(),
+            "Integer".to_string(),
+            "Decimal".to_string(),
+            "Date".to_string(),
+            "DateTime".to_string(),
+            "Time".to_string(),
+        ])
+    }
+
+    async fn get_choice_types(
         &self,
-        _base_type: &str,
-        _path: &str,
-    ) -> Result<Option<TypeReflectionInfo>> {
-        Ok(None)
+        parent_type: &str,
+        property_name: &str,
+    ) -> Result<Option<Vec<ChoiceTypeInfo>>> {
+        match (parent_type, property_name) {
+            ("Observation", "value") => Ok(Some(vec![
+                ChoiceTypeInfo {
+                    suffix: "String".to_string(),
+                    type_name: "string".to_string(),
+                },
+                ChoiceTypeInfo {
+                    suffix: "Integer".to_string(),
+                    type_name: "integer".to_string(),
+                },
+                ChoiceTypeInfo {
+                    suffix: "Boolean".to_string(),
+                    type_name: "boolean".to_string(),
+                },
+                ChoiceTypeInfo {
+                    suffix: "Quantity".to_string(),
+                    type_name: "Quantity".to_string(),
+                },
+                ChoiceTypeInfo {
+                    suffix: "CodeableConcept".to_string(),
+                    type_name: "CodeableConcept".to_string(),
+                },
+            ])),
+            _ => Ok(None),
+        }
     }
 
-    async fn get_navigation_metadata(
-        &self,
-        _base_type: &str,
-        _path: &str,
-    ) -> Result<NavigationMetadata> {
-        Ok(NavigationMetadata::default())
+    async fn get_union_types(&self, type_info: &TypeInfo) -> Result<Option<Vec<TypeInfo>>> {
+        match type_info.type_name.as_str() {
+            "Union" | "Choice" => Ok(Some(vec![
+                TypeInfo {
+                    type_name: "String".to_string(),
+                    singleton: Some(true),
+                    is_empty: Some(false),
+                    namespace: Some("System".to_string()),
+                    name: Some("String".to_string()),
+                },
+                TypeInfo {
+                    type_name: "Integer".to_string(),
+                    singleton: Some(true),
+                    is_empty: Some(false),
+                    namespace: Some("System".to_string()),
+                    name: Some("Integer".to_string()),
+                },
+            ])),
+            _ => Ok(None),
+        }
     }
 
-    async fn resolve_choice_type(
-        &self,
-        _base_path: &str,
-        _context: &PolymorphicContext,
-    ) -> Result<PolymorphicResolution> {
-        Ok(PolymorphicResolution::default())
-    }
-
-    async fn get_choice_expansions(&self, _choice_property: &str) -> Result<Vec<ChoiceExpansion>> {
-        Ok(Vec::new())
-    }
-
-    async fn infer_choice_type(&self, _context: &PolymorphicContext) -> Result<TypeInference> {
-        Ok(TypeInference::new())
-    }
-
-    async fn get_choice_type_definition(
-        &self,
-        _base_path: &str,
-    ) -> Result<Option<ChoiceTypeDefinition>> {
-        Ok(None)
-    }
-
-    async fn conforms_to_profile(&self, profile_url: &str) -> Result<ConformanceResult> {
-        Ok(ConformanceResult::new(profile_url, "Unknown"))
-    }
-
-    async fn analyze_expression_types(&self, expression: &str) -> Result<ExpressionTypeAnalysis> {
-        Ok(ExpressionTypeAnalysis::new(expression))
-    }
-
-    async fn validate_fhirpath_expression(
-        &self,
-        _expression: &str,
-        _base_type: &str,
-    ) -> Result<TypeCheckResult> {
-        Ok(TypeCheckResult::success())
-    }
-
-    async fn get_expression_dependencies(&self, _expression: &str) -> Result<Vec<TypeDependency>> {
-        Ok(Vec::new())
-    }
-
-    async fn get_collection_semantics(&self, _type_name: &str) -> Result<CollectionSemantics> {
-        Ok(CollectionSemantics::default())
-    }
-
-    async fn get_optimization_hints(&self, _expression: &str) -> Result<Vec<OptimizationHint>> {
-        Ok(Vec::new())
-    }
-
-    async fn clear_caches(&self) -> Result<()> {
-        Ok(())
-    }
-
-    async fn get_type_reflection(&self, _type_name: &str) -> Result<Option<TypeReflectionInfo>> {
-        Ok(None)
-    }
-
-    async fn get_constraints(&self, _type_name: &str) -> Result<Vec<ConstraintInfo>> {
-        Ok(Vec::new())
-    }
-
-    fn get_fhir_version(&self) -> FhirVersion {
-        FhirVersion::R4
-    }
-
-    async fn get_supported_resource_types(&self) -> Result<Vec<String>> {
-        Ok(Vec::new())
-    }
-
-    fn resource_type_exists(&self, _resource_type: &str) -> Result<bool> {
-        Ok(false)
-    }
-
-    async fn refresh_resource_types(&self) -> Result<()> {
-        Ok(())
+    fn is_union_type(&self, type_info: &TypeInfo) -> bool {
+        matches!(type_info.type_name.as_str(), "Union" | "Choice")
     }
 }
 
@@ -338,60 +432,191 @@ impl std::fmt::Display for FhirVersion {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// === IntoEvaluationResult implementations ===
 
-    #[tokio::test]
-    async fn test_empty_model_provider() {
-        let provider = EmptyModelProvider;
+impl IntoEvaluationResult for TypeInfo {
+    fn to_evaluation_result(&self) -> EvaluationResult {
+        // Convert TypeInfo to an object representation
+        let mut map = std::collections::HashMap::new();
 
-        // Test core type operations
-        let hierarchy = provider.get_type_hierarchy("Patient").await.unwrap();
-        assert!(hierarchy.is_none());
+        map.insert(
+            "type_name".to_string(),
+            self.type_name.to_evaluation_result(),
+        );
 
-        let compatibility = provider
-            .is_type_compatible("string", "boolean")
-            .await
-            .unwrap();
-        assert!(!compatibility);
+        if let Some(singleton) = self.singleton {
+            map.insert("singleton".to_string(), singleton.to_evaluation_result());
+        }
 
-        // Test navigation operations
-        let nav_result = provider
-            .navigate_typed_path("Patient", "name")
-            .await
-            .unwrap();
-        assert!(nav_result.is_success);
+        if let Some(is_empty) = self.is_empty {
+            map.insert("is_empty".to_string(), is_empty.to_evaluation_result());
+        }
 
-        // Test choice type operations
-        let choice_expansions = provider.get_choice_expansions("value[x]").await.unwrap();
-        assert!(choice_expansions.is_empty());
+        if let Some(ref namespace) = self.namespace {
+            map.insert("namespace".to_string(), namespace.to_evaluation_result());
+        }
 
-        // Test FHIRPath functions
-        let analysis = provider
-            .analyze_expression_types("Patient.name")
-            .await
-            .unwrap();
-        assert_eq!(analysis.expression, "Patient.name");
+        if let Some(ref name) = self.name {
+            map.insert("name".to_string(), name.to_evaluation_result());
+        }
 
-        // Test FHIR version
-        assert_eq!(provider.get_fhir_version(), FhirVersion::R4);
+        let type_info = if let Some(ref namespace) = self.namespace {
+            Some(TypeInfoResult::new(namespace, &self.type_name))
+        } else {
+            Some(TypeInfoResult::system(&self.type_name))
+        };
+
+        EvaluationResult::Object { map, type_info }
+    }
+}
+
+impl IntoEvaluationResult for ElementInfo {
+    fn to_evaluation_result(&self) -> EvaluationResult {
+        let mut map = std::collections::HashMap::new();
+
+        map.insert("name".to_string(), self.name.to_evaluation_result());
+        map.insert(
+            "element_type".to_string(),
+            self.element_type.to_evaluation_result(),
+        );
+
+        if let Some(ref documentation) = self.documentation {
+            map.insert(
+                "documentation".to_string(),
+                documentation.to_evaluation_result(),
+            );
+        }
+
+        EvaluationResult::typed_object(map, "FHIR", "ElementInfo")
+    }
+}
+
+impl IntoEvaluationResult for ChoiceTypeInfo {
+    fn to_evaluation_result(&self) -> EvaluationResult {
+        let mut map = std::collections::HashMap::new();
+
+        map.insert("suffix".to_string(), self.suffix.to_evaluation_result());
+        map.insert(
+            "type_name".to_string(),
+            self.type_name.to_evaluation_result(),
+        );
+
+        EvaluationResult::typed_object(map, "FHIR", "ChoiceTypeInfo")
+    }
+}
+
+impl IntoEvaluationResult for FhirVersion {
+    fn to_evaluation_result(&self) -> EvaluationResult {
+        EvaluationResult::string(self.to_string())
+    }
+}
+
+/// Lightweight ModelProvider wrapper that delegates to a full provider
+/// but excludes validation-related functionality to break circular dependencies.
+///
+/// This provider is used in scenarios where we need basic type information
+/// without profile validation capabilities, preventing circular dependencies
+/// between ModelProvider and FhirPathEvaluator.
+#[derive(Debug, Clone)]
+pub struct LiteModelProvider {
+    /// The underlying full model provider
+    inner: std::sync::Arc<dyn ModelProvider>,
+}
+
+impl LiteModelProvider {
+    /// Create a new lite provider wrapping a full provider
+    pub fn new(inner: std::sync::Arc<dyn ModelProvider>) -> Self {
+        Self { inner }
     }
 
-    #[test]
-    fn test_fhir_version_display() {
-        assert_eq!(format!("{}", FhirVersion::R4), "R4");
-        assert_eq!(format!("{}", FhirVersion::R4B), "R4B");
-        assert_eq!(format!("{}", FhirVersion::R5), "R5");
-        assert_eq!(format!("{}", FhirVersion::R6), "R6");
-        assert_eq!(
-            format!(
-                "{}",
-                FhirVersion::Custom {
-                    version: "6.0.0".to_string()
-                }
-            ),
-            "6.0.0"
-        );
+    /// Get reference to the underlying provider
+    pub fn inner(&self) -> &dyn ModelProvider {
+        self.inner.as_ref()
+    }
+
+    /// Unwrap to get the underlying provider
+    pub fn into_inner(self) -> std::sync::Arc<dyn ModelProvider> {
+        self.inner
+    }
+
+    /// Check if this provider supports enhanced validation
+    /// (always returns false for lite provider)
+    pub fn supports_validation(&self) -> bool {
+        false
+    }
+}
+
+#[async_trait]
+impl ModelProvider for LiteModelProvider {
+    async fn get_type(&self, type_name: &str) -> Result<Option<TypeInfo>> {
+        self.inner.get_type(type_name).await
+    }
+
+    async fn get_element_type(
+        &self,
+        parent_type: &TypeInfo,
+        property_name: &str,
+    ) -> Result<Option<TypeInfo>> {
+        self.inner
+            .get_element_type(parent_type, property_name)
+            .await
+    }
+
+    fn of_type(&self, type_info: &TypeInfo, target_type: &str) -> Option<TypeInfo> {
+        self.inner.of_type(type_info, target_type)
+    }
+
+    fn get_element_names(&self, parent_type: &TypeInfo) -> Vec<String> {
+        self.inner.get_element_names(parent_type)
+    }
+
+    async fn get_children_type(&self, parent_type: &TypeInfo) -> Result<Option<TypeInfo>> {
+        self.inner.get_children_type(parent_type).await
+    }
+
+    async fn get_elements(&self, type_name: &str) -> Result<Vec<ElementInfo>> {
+        self.inner.get_elements(type_name).await
+    }
+
+    async fn get_resource_types(&self) -> Result<Vec<String>> {
+        self.inner.get_resource_types().await
+    }
+
+    async fn get_complex_types(&self) -> Result<Vec<String>> {
+        self.inner.get_complex_types().await
+    }
+
+    async fn get_primitive_types(&self) -> Result<Vec<String>> {
+        self.inner.get_primitive_types().await
+    }
+
+    async fn resource_type_exists(&self, resource_type: &str) -> Result<bool> {
+        self.inner.resource_type_exists(resource_type).await
+    }
+
+    async fn get_fhir_version(&self) -> Result<FhirVersion> {
+        self.inner.get_fhir_version().await
+    }
+
+    fn is_type_derived_from(&self, derived_type: &str, base_type: &str) -> bool {
+        self.inner.is_type_derived_from(derived_type, base_type)
+    }
+
+    async fn get_choice_types(
+        &self,
+        parent_type: &str,
+        property_name: &str,
+    ) -> Result<Option<Vec<ChoiceTypeInfo>>> {
+        self.inner
+            .get_choice_types(parent_type, property_name)
+            .await
+    }
+
+    async fn get_union_types(&self, type_info: &TypeInfo) -> Result<Option<Vec<TypeInfo>>> {
+        self.inner.get_union_types(type_info).await
+    }
+
+    fn is_union_type(&self, type_info: &TypeInfo) -> bool {
+        self.inner.is_union_type(type_info)
     }
 }
