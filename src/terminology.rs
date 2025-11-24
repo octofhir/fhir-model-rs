@@ -399,13 +399,13 @@ impl TerminologyProvider for HttpTerminologyProvider {
             // Extract result from Parameters resource
             if let Some(params_array) = json.get("parameter").and_then(|p| p.as_array()) {
                 for param in params_array {
-                    if let Some(name) = param.get("name").and_then(|n| n.as_str()) {
-                        if name == "result" {
-                            return Ok(param
-                                .get("valueBoolean")
-                                .and_then(|b| b.as_bool())
-                                .unwrap_or(false));
-                        }
+                    if let Some(name) = param.get("name").and_then(|n| n.as_str())
+                        && name == "result"
+                    {
+                        return Ok(param
+                            .get("valueBoolean")
+                            .and_then(|b| b.as_bool())
+                            .unwrap_or(false));
                     }
                 }
             }
@@ -776,20 +776,17 @@ impl TerminologyProvider for HttpTerminologyProvider {
             // Parse Parameters resource response
             if let Some(params_array) = json.get("parameter").and_then(|p| p.as_array()) {
                 for param in params_array {
-                    if let Some(name) = param.get("name").and_then(|n| n.as_str()) {
-                        if name == "outcome" {
-                            if let Some(outcome_str) =
-                                param.get("valueCode").and_then(|v| v.as_str())
-                            {
-                                let outcome = match outcome_str {
-                                    "subsumes" => SubsumptionOutcome::Subsumes,
-                                    "subsumed-by" => SubsumptionOutcome::SubsumedBy,
-                                    "equivalent" => SubsumptionOutcome::Equivalent,
-                                    _ => SubsumptionOutcome::NotSubsumed,
-                                };
-                                return Ok(SubsumptionResult { outcome });
-                            }
-                        }
+                    if let Some(name) = param.get("name").and_then(|n| n.as_str())
+                        && name == "outcome"
+                        && let Some(outcome_str) = param.get("valueCode").and_then(|v| v.as_str())
+                    {
+                        let outcome = match outcome_str {
+                            "subsumes" => SubsumptionOutcome::Subsumes,
+                            "subsumed-by" => SubsumptionOutcome::SubsumedBy,
+                            "equivalent" => SubsumptionOutcome::Equivalent,
+                            _ => SubsumptionOutcome::NotSubsumed,
+                        };
+                        return Ok(SubsumptionResult { outcome });
                     }
                 }
             }
