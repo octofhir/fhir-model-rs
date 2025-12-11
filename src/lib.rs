@@ -54,13 +54,21 @@ pub use provider::{
     ElementInfo, EmptyModelProvider, FhirVersion, LiteModelProvider, ModelProvider, TypeInfo,
 };
 pub use terminology::{
-    ConnectionStatus, EquivalenceLevel, ExpansionParameter, ExpansionParameters,
-    NoOpTerminologyProvider, TerminologyProvider, TranslationResult, TranslationTarget,
-    ValueSetConcept, ValueSetExpansion,
+    ConceptProperty, ConnectionStatus, EquivalenceLevel, ExpansionParameter, ExpansionParameters,
+    LookupResult, NoOpTerminologyProvider, SubsumptionOutcome, SubsumptionResult,
+    TerminologyCacheConfig, TerminologyCacheStats, TerminologyProvider, TranslationResult,
+    TranslationTarget, ValidationResult as TerminologyValidationResult, ValueSetConcept,
+    ValueSetExpansion,
 };
 
 #[cfg(feature = "http-client")]
 pub use terminology::HttpTerminologyProvider;
+
+#[cfg(feature = "caching")]
+pub use terminology::{CachedTerminologyProvider, LookupCacheKey, ValidationCacheKey};
+
+#[cfg(all(feature = "http-client", feature = "caching"))]
+pub use terminology::DefaultTerminologyProvider;
 
 /// Version information for this crate
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
