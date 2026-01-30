@@ -44,8 +44,8 @@ pub use evaluation::{
 };
 pub use evaluator::{
     CompiledExpression, ErrorSeverity, FhirPathConstraint, FhirPathEvaluator,
-    FhirPathEvaluatorFactory, ValidationError, ValidationProvider, ValidationResult,
-    ValidationWarning, Variables,
+    FhirPathEvaluatorFactory, JsonVariables, ValidationError, ValidationProvider, ValidationResult,
+    ValidationWarning,
 };
 pub use fhir_traits::{
     BackboneElement, ChoiceElement, FhirPrimitive, FhirReference, FhirResourceMetadata, ToFhirJson,

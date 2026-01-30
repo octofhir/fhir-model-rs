@@ -1,6 +1,6 @@
 [package]
 name = "octofhir-fhir-model"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 authors = ["OctoFHIR Team <funyloony@gmail.com>"]
 license = "MIT OR Apache-2.0"
@@ -34,13 +34,13 @@ smallvec = { version = "1.11", features = ["serde"] }
 papaya = "0.2"
 
 # Decimal precision for FHIRPath values
-rust_decimal = { version = "1.39", features = ["serde"] }
+rust_decimal = { version = "1.40", features = ["serde"] }
 
 # HTTP client (optional)
-reqwest = { version = "0.12", features = [
+reqwest = { version = "0.13.1", features = [
     "json",
     "gzip",
-    "rustls-tls",
+    "rustls",
 ], optional = true }
 
 # Caching (optional)

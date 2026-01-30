@@ -13,8 +13,8 @@ use crate::error::Result;
 use crate::evaluation::EvaluationResult;
 use crate::provider::ModelProvider;
 
-/// Variables for FHIRPath evaluation context
-pub type Variables = HashMap<String, EvaluationResult>;
+/// Variables for FHIRPath evaluation context (Arc-wrapped JSON values to avoid deep cloning)
+pub type JsonVariables = HashMap<String, Arc<JsonValue>>;
 
 /// Compiled FHIRPath expression for reuse
 #[derive(Debug, Clone)]
@@ -249,7 +249,7 @@ pub trait FhirPathEvaluator: Send + Sync {
         &self,
         expression: &str,
         context: &JsonValue,
-        variables: &Variables,
+        variables: &JsonVariables,
     ) -> Result<EvaluationResult>;
 
     /// Compile an expression for reuse
@@ -294,6 +294,32 @@ pub trait FhirPathEvaluator: Send + Sync {
     fn validation_provider(&self) -> Option<&dyn ValidationProvider> {
         // Default implementation returns None - override in concrete evaluators
         None
+    }
+
+    /// Evaluate a FHIRPath constraint expression and return whether it is satisfied.
+    ///
+    /// This is an optimized path for constraint validation that avoids the
+    /// expensive conversion of the internal evaluation result to the external
+    /// `EvaluationResult` type. Per FHIR spec, a constraint is satisfied when:
+    /// - The result is empty (constraint not applicable)
+    /// - The result is `Boolean(true)`
+    /// - The result is any non-boolean value (truthy)
+    ///
+    /// Only `Boolean(false)` means the constraint is violated.
+    ///
+    /// The default implementation delegates to `evaluate_with_variables` and
+    /// checks `is_constraint_satisfied()` on the result. Concrete evaluators
+    /// can override this to skip the result conversion entirely.
+    async fn evaluate_constraint_with_variables(
+        &self,
+        expression: &str,
+        context: &JsonValue,
+        variables: &JsonVariables,
+    ) -> Result<bool> {
+        let result = self
+            .evaluate_with_variables(expression, context, variables)
+            .await?;
+        Ok(result.is_constraint_satisfied())
     }
 
     /// Validate FHIR constraints
@@ -347,7 +373,7 @@ pub trait FhirPathEvaluator: Send + Sync {
         &self,
         compiled: &CompiledExpression,
         context: &JsonValue,
-        variables: &Variables,
+        variables: &JsonVariables,
     ) -> Result<EvaluationResult> {
         // Default implementation falls back to regular evaluation
         self.evaluate_with_variables(&compiled.expression, context, variables)

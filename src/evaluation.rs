@@ -212,6 +212,37 @@ impl EvaluationResult {
         }
     }
 
+    /// Check if a FHIRPath constraint is satisfied.
+    ///
+    /// Per FHIR spec: "When a FHIRPath expression is used as an invariant,
+    /// if the expression returns empty ( { } ), the constraint is considered satisfied."
+    ///
+    /// Returns true (satisfied) for:
+    /// - Empty result (constraint not applicable)
+    /// - Single boolean true
+    /// - Non-boolean single value (truthy)
+    /// - Collection with items (truthy)
+    ///
+    /// Returns false (violated) only for:
+    /// - Single boolean false
+    /// - Empty collection
+    pub fn is_constraint_satisfied(&self) -> bool {
+        match self {
+            EvaluationResult::Empty => true, // Empty means constraint is not applicable
+            EvaluationResult::Boolean(b, _) => *b,
+            EvaluationResult::Collection { items, .. } => {
+                if items.is_empty() {
+                    true // Empty collection means not applicable
+                } else if items.len() == 1 {
+                    items[0].is_constraint_satisfied()
+                } else {
+                    true // Multiple items = truthy
+                }
+            }
+            _ => true, // All other values are truthy
+        }
+    }
+
     /// Convert to string representation
     pub fn to_string_value(&self) -> String {
         match self {
