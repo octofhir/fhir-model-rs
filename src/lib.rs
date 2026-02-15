@@ -35,6 +35,7 @@ pub mod evaluation;
 pub mod evaluator;
 pub mod fhir_traits;
 pub mod provider;
+pub mod server;
 pub mod terminology;
 
 // Re-export core types
@@ -53,6 +54,9 @@ pub use fhir_traits::{
 pub use provider::{
     ElementInfo, EmptyModelProvider, FhirVersion, LiteModelProvider, ModelProvider, TypeInfo,
 };
+#[cfg(feature = "http-client")]
+pub use server::HttpServerProvider;
+pub use server::{NoOpServerProvider, ServerProvider};
 pub use terminology::{
     ConceptProperty, ConnectionStatus, EquivalenceLevel, ExpansionParameter, ExpansionParameters,
     LookupResult, NoOpTerminologyProvider, SubsumptionOutcome, SubsumptionResult,

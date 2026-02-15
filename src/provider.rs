@@ -115,6 +115,17 @@ impl TypeInfo {
             name: Some(type_name),
         }
     }
+
+    /// Create a FHIR complex type (Element, BackboneElement, Resource, etc.)
+    pub fn new_complex(type_name: &str) -> Self {
+        Self {
+            type_name: type_name.to_string(),
+            singleton: Some(true),
+            is_empty: Some(false),
+            namespace: Some("FHIR".to_string()),
+            name: Some(type_name.to_string()),
+        }
+    }
 }
 
 /// Element information for completion suggestions
