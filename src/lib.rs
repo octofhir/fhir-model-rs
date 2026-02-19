@@ -53,6 +53,7 @@ pub use fhir_traits::{
 };
 pub use provider::{
     ElementInfo, EmptyModelProvider, FhirVersion, LiteModelProvider, ModelProvider, TypeInfo,
+    type_constants,
 };
 #[cfg(feature = "http-client")]
 pub use server::HttpServerProvider;

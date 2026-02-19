@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use async_trait::async_trait;
+use std::sync::{Arc, LazyLock};
 
 use crate::error::Result;
 use crate::evaluation::{EvaluationResult, IntoEvaluationResult, TypeInfoResult};
@@ -126,6 +127,40 @@ impl TypeInfo {
             name: Some(type_name.to_string()),
         }
     }
+}
+
+/// Pre-allocated `Arc<TypeInfo>` constants for common system types.
+/// Using these avoids repeated String allocations when creating FhirPathValues.
+pub mod type_constants {
+    use super::*;
+
+    /// System Boolean type info
+    pub static BOOLEAN_TYPE: LazyLock<Arc<TypeInfo>> =
+        LazyLock::new(|| Arc::new(TypeInfo::system_type("Boolean".to_string(), true)));
+    /// System String type info
+    pub static STRING_TYPE: LazyLock<Arc<TypeInfo>> =
+        LazyLock::new(|| Arc::new(TypeInfo::system_type("String".to_string(), true)));
+    /// System Integer type info
+    pub static INTEGER_TYPE: LazyLock<Arc<TypeInfo>> =
+        LazyLock::new(|| Arc::new(TypeInfo::system_type("Integer".to_string(), true)));
+    /// System Long type info
+    pub static LONG_TYPE: LazyLock<Arc<TypeInfo>> =
+        LazyLock::new(|| Arc::new(TypeInfo::system_type("Long".to_string(), true)));
+    /// System Decimal type info
+    pub static DECIMAL_TYPE: LazyLock<Arc<TypeInfo>> =
+        LazyLock::new(|| Arc::new(TypeInfo::system_type("Decimal".to_string(), true)));
+    /// System Date type info
+    pub static DATE_TYPE: LazyLock<Arc<TypeInfo>> =
+        LazyLock::new(|| Arc::new(TypeInfo::system_type("Date".to_string(), true)));
+    /// System DateTime type info
+    pub static DATETIME_TYPE: LazyLock<Arc<TypeInfo>> =
+        LazyLock::new(|| Arc::new(TypeInfo::system_type("DateTime".to_string(), true)));
+    /// System Time type info
+    pub static TIME_TYPE: LazyLock<Arc<TypeInfo>> =
+        LazyLock::new(|| Arc::new(TypeInfo::system_type("Time".to_string(), true)));
+    /// System Quantity type info
+    pub static QUANTITY_TYPE: LazyLock<Arc<TypeInfo>> =
+        LazyLock::new(|| Arc::new(TypeInfo::system_type("Quantity".to_string(), true)));
 }
 
 /// Element information for completion suggestions
