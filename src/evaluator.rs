@@ -232,7 +232,8 @@ pub trait FhirPathEvaluator: Send + Sync {
     ///
     /// # Returns
     /// The evaluation result or an error
-    async fn evaluate(&self, expression: &str, context: &JsonValue) -> Result<EvaluationResult>;
+    async fn evaluate(&self, expression: &str, context: Arc<JsonValue>)
+    -> Result<EvaluationResult>;
 
     /// Evaluate with variables
     ///
@@ -248,7 +249,7 @@ pub trait FhirPathEvaluator: Send + Sync {
     async fn evaluate_with_variables(
         &self,
         expression: &str,
-        context: &JsonValue,
+        context: Arc<JsonValue>,
         variables: &JsonVariables,
     ) -> Result<EvaluationResult>;
 
@@ -313,7 +314,7 @@ pub trait FhirPathEvaluator: Send + Sync {
     async fn evaluate_constraint_with_variables(
         &self,
         expression: &str,
-        context: &JsonValue,
+        context: Arc<JsonValue>,
         variables: &JsonVariables,
     ) -> Result<bool> {
         let result = self
@@ -335,7 +336,7 @@ pub trait FhirPathEvaluator: Send + Sync {
     /// Validation result with any constraint violations
     async fn validate_constraints(
         &self,
-        resource: &JsonValue,
+        resource: Arc<JsonValue>,
         constraints: &[FhirPathConstraint],
     ) -> Result<ValidationResult>;
 
@@ -352,7 +353,7 @@ pub trait FhirPathEvaluator: Send + Sync {
     async fn evaluate_compiled(
         &self,
         compiled: &CompiledExpression,
-        context: &JsonValue,
+        context: Arc<JsonValue>,
     ) -> Result<EvaluationResult> {
         // Default implementation falls back to regular evaluation
         self.evaluate(&compiled.expression, context).await
@@ -372,7 +373,7 @@ pub trait FhirPathEvaluator: Send + Sync {
     async fn evaluate_compiled_with_variables(
         &self,
         compiled: &CompiledExpression,
-        context: &JsonValue,
+        context: Arc<JsonValue>,
         variables: &JsonVariables,
     ) -> Result<EvaluationResult> {
         // Default implementation falls back to regular evaluation
