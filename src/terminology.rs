@@ -419,7 +419,18 @@ impl TerminologyProvider for HttpTerminologyProvider {
         valueset_url: &str,
         _parameters: Option<&ExpansionParameters>,
     ) -> Result<ValueSetExpansion> {
-        let url = format!("{}/ValueSet/$expand?url={}", self.base_url, valueset_url);
+        // Split a `url|version` canonical: `$expand` takes the bare canonical in
+        // `url` and the version in `valueSetVersion` (a `|`-versioned `url` 400s on
+        // many tx servers).
+        let (vs_url, vs_version) = match valueset_url.split_once('|') {
+            Some((base, version)) => (base, Some(version)),
+            None => (valueset_url, None),
+        };
+        let mut url = format!("{}/ValueSet/$expand?url={}", self.base_url, vs_url);
+        if let Some(version) = vs_version {
+            url.push_str("&valueSetVersion=");
+            url.push_str(version);
+        }
 
         let response = self
             .build_request(reqwest::Method::GET, &url)
@@ -662,10 +673,23 @@ impl TerminologyProvider for HttpTerminologyProvider {
     ) -> Result<ValidationResult> {
         let mut url = format!("{}/ValueSet/$validate-code", self.base_url);
 
+        // A FHIR canonical may carry a version as `url|version`. Per the
+        // `$validate-code` operation the `url` parameter takes the bare canonical
+        // and the version is supplied separately via `valueSetVersion`; passing a
+        // `|`-versioned value in `url` is rejected by many tx servers with 400.
+        let (vs_url, vs_version) = match valueset.split_once('|') {
+            Some((base, version)) => (base, Some(version)),
+            None => (valueset, None),
+        };
+
         let mut params = vec![
-            ("url".to_string(), valueset.to_string()),
+            ("url".to_string(), vs_url.to_string()),
             ("code".to_string(), code.to_string()),
         ];
+
+        if let Some(version) = vs_version {
+            params.push(("valueSetVersion".to_string(), version.to_string()));
+        }
 
         if let Some(sys) = system {
             params.push(("system".to_string(), sys.to_string()));
