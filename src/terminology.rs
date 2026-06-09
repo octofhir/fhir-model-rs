@@ -669,6 +669,14 @@ impl TerminologyProvider for HttpTerminologyProvider {
 
         if let Some(sys) = system {
             params.push(("system".to_string(), sys.to_string()));
+        } else {
+            // No system available (e.g. a primitive `code` bound to a ValueSet that
+            // includes a whole code system, such as currencies -> urn:iso:std:iso:4217).
+            // Ask the terminology server to infer the system from the ValueSet, which
+            // is required by tx servers that
+            // otherwise reject the request with "must supply a 'system' or set
+            // 'inferSystem=true'".
+            params.push(("inferSystem".to_string(), "true".to_string()));
         }
 
         if let Some(disp) = display {
@@ -735,11 +743,13 @@ impl TerminologyProvider for HttpTerminologyProvider {
             return Ok(validation_result);
         }
 
-        Ok(ValidationResult {
-            result: false,
-            display: None,
-            message: Some("Validation failed".to_string()),
-        })
+        // A non-success response (e.g. the tx server could not resolve the code
+        // system) does NOT mean the code is invalid. Surface it as an error so
+        // callers treat the check as advisory instead of falsely rejecting.
+        let status = response.status();
+        Err(crate::error::ModelError::validation_error(format!(
+            "Terminology server returned {status} validating code '{code}' against {valueset}"
+        )))
     }
 
     async fn subsumes(&self, system: &str, parent: &str, child: &str) -> Result<SubsumptionResult> {
