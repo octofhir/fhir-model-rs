@@ -323,6 +323,41 @@ pub trait FhirPathEvaluator: Send + Sync {
         Ok(result.is_constraint_satisfied())
     }
 
+    /// Evaluate several constraint expressions that share the same context node
+    /// and variables, returning one satisfied flag per expression.
+    ///
+    /// Semantics are identical to calling `evaluate_constraint_with_variables`
+    /// once per expression (empty result / non-boolean / `Boolean(true)` =>
+    /// satisfied; only `Boolean(false)` => violated). The value of this method
+    /// is that a concrete evaluator can build the FHIRPath data model and
+    /// evaluation context for `context` and `variables` a single time and reuse
+    /// it across every expression, instead of rebuilding it per constraint.
+    ///
+    /// Each expression is evaluated independently: the returned vector has one
+    /// entry per expression, in order, holding either the satisfied flag or the
+    /// evaluation error for that single expression. A failing expression does
+    /// not abort the others. The outer `Result` is `Err` only when the shared
+    /// context itself cannot be built.
+    ///
+    /// The default implementation preserves behavior by delegating to
+    /// `evaluate_constraint_with_variables` for each expression, so existing
+    /// evaluators keep working without change.
+    async fn evaluate_constraints_shared_context(
+        &self,
+        context: Arc<JsonValue>,
+        variables: &JsonVariables,
+        expressions: &[&str],
+    ) -> Result<Vec<Result<bool>>> {
+        let mut out = Vec::with_capacity(expressions.len());
+        for expression in expressions {
+            out.push(
+                self.evaluate_constraint_with_variables(expression, context.clone(), variables)
+                    .await,
+            );
+        }
+        Ok(out)
+    }
+
     /// Validate FHIR constraints
     ///
     /// Evaluates multiple FHIRPath constraints against a resource for
