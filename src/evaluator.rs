@@ -339,27 +339,19 @@ pub trait FhirPathEvaluator: Send + Sync {
     /// not abort the others. The outer `Result` is `Err` only when the shared
     /// context itself cannot be built.
     ///
-    /// `context_type` is the FHIR type name of the context node (e.g. `"dateTime"`
-    /// for an invariant declared on `Observation.effective[x]`). Callers should
-    /// supply it whenever they know it: `context` alone is untyped JSON, so a
-    /// primitive such as `"2017-03-15T20:23:41+00:00"` is otherwise
-    /// indistinguishable from a plain string and cannot be modelled as the FHIR
-    /// type it actually is. Invariants like `$this is dateTime implies ...` only
-    /// behave correctly when the type is known. `None` means "unknown"; the
-    /// context node is then modelled from the JSON shape alone.
-    ///
     /// The default implementation preserves behavior by delegating to
     /// `evaluate_constraint_with_variables` for each expression, so existing
-    /// evaluators keep working without change. Note that the default ignores
-    /// `context_type` — evaluators that model typed primitives must override.
+    /// evaluators keep working without change.
+    ///
+    /// Prefer [`Self::evaluate_constraints_shared_context_typed`] when the FHIR
+    /// type of the context node is known; this method cannot model a context
+    /// node that is not a whole resource.
     async fn evaluate_constraints_shared_context(
         &self,
         context: Arc<JsonValue>,
-        context_type: Option<&str>,
         variables: &JsonVariables,
         expressions: &[&str],
     ) -> Result<Vec<Result<bool>>> {
-        let _ = context_type;
         let mut out = Vec::with_capacity(expressions.len());
         for expression in expressions {
             out.push(
@@ -368,6 +360,34 @@ pub trait FhirPathEvaluator: Send + Sync {
             );
         }
         Ok(out)
+    }
+
+    /// As [`Self::evaluate_constraints_shared_context`], but naming the FHIR type
+    /// of the context node.
+    ///
+    /// `context_type` is the type of `context` (e.g. `"dateTime"` for an
+    /// invariant declared on `Observation.effective[x]`). Callers should supply
+    /// it whenever they know it: `context` alone is untyped JSON, so a primitive
+    /// such as `"2017-03-15T20:23:41+00:00"` is indistinguishable from a plain
+    /// string and cannot otherwise be modelled as the FHIR type it actually is.
+    /// Invariants like `$this is dateTime implies ...` only behave correctly
+    /// when the type is known. `None` means "unknown": the context node is then
+    /// modelled from its JSON shape alone.
+    ///
+    /// The default implementation ignores `context_type` and delegates to the
+    /// untyped method, so evaluators that predate this method keep compiling and
+    /// behaving exactly as before. Evaluators that can model typed primitives
+    /// should override it.
+    async fn evaluate_constraints_shared_context_typed(
+        &self,
+        context: Arc<JsonValue>,
+        context_type: Option<&str>,
+        variables: &JsonVariables,
+        expressions: &[&str],
+    ) -> Result<Vec<Result<bool>>> {
+        let _ = context_type;
+        self.evaluate_constraints_shared_context(context, variables, expressions)
+            .await
     }
 
     /// Validate FHIR constraints
