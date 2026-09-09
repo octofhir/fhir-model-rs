@@ -212,7 +212,7 @@ impl ServerProvider for NoOpServerProvider {
 pub struct HttpServerProvider {
     /// HTTP client for making requests
     client: reqwest::Client,
-    /// Base URL of the FHIR server (e.g., "https://hapi.fhir.org/baseR4")
+    /// Base URL of the FHIR server (e.g., <https://hapi.fhir.org/baseR4>)
     base_url: String,
 }
 

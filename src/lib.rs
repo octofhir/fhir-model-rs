@@ -43,6 +43,7 @@ pub use error::{ModelError, Result};
 pub use evaluation::{
     EvaluationResult, IntoEvaluationResult, TypeInfoResult, convert_value_to_evaluation_result,
 };
+pub mod prepared;
 pub use evaluator::{
     CompiledExpression, ErrorSeverity, FhirPathConstraint, FhirPathEvaluator,
     FhirPathEvaluatorFactory, JsonVariables, ValidationError, ValidationProvider, ValidationResult,
@@ -51,6 +52,7 @@ pub use evaluator::{
 pub use fhir_traits::{
     BackboneElement, ChoiceElement, FhirPrimitive, FhirReference, FhirResourceMetadata, ToFhirJson,
 };
+pub use prepared::{ConstraintId, ExecutableExpression, NodeId, PreparedResource};
 pub use provider::{
     ElementInfo, EmptyModelProvider, FhirVersion, LiteModelProvider, ModelProvider, TypeInfo,
     type_constants,

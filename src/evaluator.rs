@@ -264,6 +264,52 @@ pub trait FhirPathEvaluator: Send + Sync {
     /// A compiled expression that can be reused
     async fn compile(&self, expression: &str) -> Result<CompiledExpression>;
 
+    /// Retain an executable handle. Existing evaluators use a string fallback.
+    async fn compile_handle(&self, expression: &str) -> Result<crate::ExecutableExpression> {
+        let compiled = self.compile(expression).await?;
+        if !compiled.is_valid {
+            return Err(crate::ModelError::evaluation_error(compiled.compiled_form));
+        }
+        Ok(crate::ExecutableExpression::new(expression))
+    }
+
+    /// Prepare a resource for all constraint groups in one validation run.
+    /// `None` selects the existing shared-context API without changing semantics.
+    async fn prepare_resource(
+        &self,
+        _resource: Arc<JsonValue>,
+        _variables: &JsonVariables,
+    ) -> Result<Option<crate::PreparedResource>> {
+        Ok(None)
+    }
+
+    /// Execute retained constraints on a node in a prepared resource.
+    /// Implementations must reject foreign nodes and executable ownership.
+    /// Each expression has an independent variable scope and result/error slot.
+    /// Variables must retain the same Arc identities as at preparation time;
+    /// prepare a new resource when the variable environment changes.
+    async fn evaluate_prepared_constraints(
+        &self,
+        resource: &crate::PreparedResource,
+        node: crate::NodeId,
+        context: &JsonValue,
+        context_type: Option<&str>,
+        variables: &JsonVariables,
+        expressions: &[Arc<crate::ExecutableExpression>],
+    ) -> Result<Vec<Result<bool>>> {
+        if resource.node_id(context) != Some(node) {
+            return Err(crate::ModelError::evaluation_error("Foreign prepared node"));
+        }
+        let expressions: Vec<_> = expressions.iter().map(|plan| plan.expression()).collect();
+        self.evaluate_constraints_shared_context_typed(
+            Arc::new(context.clone()),
+            context_type,
+            variables,
+            &expressions,
+        )
+        .await
+    }
+
     /// Validate expression syntax
     ///
     /// Checks if a FHIRPath expression is syntactically valid.
