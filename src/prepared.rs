@@ -10,9 +10,16 @@ use serde_json::Value;
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 fn next_id() -> u64 {
-    NEXT_ID
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-        .expect("Evaluator handle identity space exhausted")
+    let mut current = NEXT_ID.load(Ordering::Relaxed);
+    loop {
+        let next = current
+            .checked_add(1)
+            .expect("Evaluator handle identity space exhausted");
+        match NEXT_ID.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return current,
+            Err(actual) => current = actual,
+        }
+    }
 }
 
 /// Identity of one retained expression; never reused after cache eviction.

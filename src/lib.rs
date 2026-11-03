@@ -61,11 +61,11 @@ pub use provider::{
 pub use server::HttpServerProvider;
 pub use server::{NoOpServerProvider, ServerProvider};
 pub use terminology::{
-    ConceptProperty, ConnectionStatus, EquivalenceLevel, ExpansionParameter, ExpansionParameters,
-    LookupResult, NoOpTerminologyProvider, SubsumptionOutcome, SubsumptionResult,
-    TerminologyCacheConfig, TerminologyCacheStats, TerminologyProvider, TranslationResult,
-    TranslationTarget, ValidationResult as TerminologyValidationResult, ValueSetConcept,
-    ValueSetExpansion,
+    ConceptProperty, ConnectionStatus, EquivalenceLevel, ExpandedValueSet, ExpansionParameter,
+    ExpansionParameters, LookupResult, NoOpTerminologyProvider, SubsumptionOutcome,
+    SubsumptionResult, TerminologyCacheConfig, TerminologyCacheStats, TerminologyProvider,
+    TranslationResult, TranslationTarget, ValidationResult as TerminologyValidationResult,
+    ValueSetConcept, ValueSetExpansion,
 };
 
 #[cfg(feature = "http-client")]

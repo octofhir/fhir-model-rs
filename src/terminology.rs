@@ -51,6 +51,58 @@ pub trait TerminologyProvider: Send + Sync + std::fmt::Debug {
 
     /// Test connection to terminology server
     async fn test_connection(&self) -> Result<ConnectionStatus>;
+
+    /// The base URL of the terminology server behind this provider, if any:
+    /// identifies it in provenance and messages.
+    fn endpoint(&self) -> Option<&str> {
+        None
+    }
+
+    /// `ValueSet/$expand` of the value set `url` (and `version`), returned
+    /// as the server sent it: the whole ValueSet resource, with its
+    /// expansion's `total`, `offset`, `parameter`, nested `contains`,
+    /// `version`, `inactive`, `abstract` and extensions, so a caller can
+    /// tell a complete membership from a page. `count` asks for that many
+    /// members. A server that does not know the value set is
+    /// [`ExpandedValueSet::Unknown`]; any other failure is an error, never an
+    /// empty expansion.
+    ///
+    /// Providers that cannot expand this way keep the default, an error.
+    async fn expand_valueset_resource(
+        &self,
+        url: &str,
+        version: Option<&str>,
+        count: Option<u32>,
+    ) -> Result<ExpandedValueSet> {
+        let _ = (version, count);
+        Err(crate::error::ModelError::generic(format!(
+            "this terminology provider cannot expand {url}"
+        )))
+    }
+
+    /// `ValueSet/$expand` of a ValueSet definition (`valueSet` parameter),
+    /// for a value set the server cannot know by canonical; the definition
+    /// is sent to the server. As [`Self::expand_valueset_resource`]
+    /// otherwise.
+    async fn expand_valueset_definition(
+        &self,
+        value_set: &serde_json::Value,
+        count: Option<u32>,
+    ) -> Result<ExpandedValueSet> {
+        let _ = (value_set, count);
+        Err(crate::error::ModelError::generic(
+            "this terminology provider cannot expand a ValueSet definition",
+        ))
+    }
+}
+
+/// A terminology server's answer to a strict `ValueSet/$expand`.
+#[derive(Debug, Clone)]
+pub enum ExpandedValueSet {
+    /// The expanded ValueSet resource, as the server returned it.
+    Found(serde_json::Value),
+    /// The server does not know the value set.
+    Unknown,
 }
 
 /// Expansion parameters for ValueSet operations
@@ -357,6 +409,90 @@ impl HttpTerminologyProvider {
 
         request.header("Accept", "application/fhir+json")
     }
+
+    /// `GET ValueSet/$expand?url=…[&valueSetVersion=…][&count=…]`.
+    async fn get_expansion(
+        &self,
+        url: &str,
+        version: Option<&str>,
+        count: Option<u32>,
+        extra: &[(&str, String)],
+    ) -> Result<ExpandedValueSet> {
+        let mut query: Vec<(&str, String)> = vec![("url", url.to_string())];
+        if let Some(version) = version {
+            query.push(("valueSetVersion", version.to_string()));
+        }
+        if let Some(count) = count {
+            query.push(("count", count.to_string()));
+        }
+        query.extend(extra.iter().cloned());
+        let endpoint =
+            reqwest::Url::parse_with_params(&format!("{}/ValueSet/$expand", self.base_url), &query)
+                .map_err(|e| {
+                    crate::error::ModelError::invalid_configuration(format!(
+                        "terminology server URL {}: {e}",
+                        self.base_url
+                    ))
+                })?;
+        let response = self
+            .build_request(reqwest::Method::GET, endpoint.as_str())
+            .send()
+            .await
+            .map_err(|e| {
+                crate::error::ModelError::validation_error(format!("HTTP request failed: {e}"))
+            })?;
+        let mut answer = expanded_value_set(response, true).await?;
+        if let ExpandedValueSet::Found(expanded) = &mut answer {
+            expanded["url"] = serde_json::Value::String(url.to_string());
+            if let Some(version) = version
+                && !expanded["version"].is_string()
+            {
+                expanded["version"] = serde_json::Value::String(version.to_string());
+            }
+        }
+        Ok(answer)
+    }
+}
+
+/// A `$expand` response as an [`ExpandedValueSet`]: a ValueSet with an
+/// expansion, or (when `by_canonical`) `Unknown` for a 404 / 410 or an
+/// OperationOutcome saying `not-found` (servers also answer an unknown
+/// canonical with 400 or 422); anything else is an error carrying the
+/// outcome's text.
+#[cfg(feature = "http-client")]
+async fn expanded_value_set(
+    response: reqwest::Response,
+    by_canonical: bool,
+) -> Result<ExpandedValueSet> {
+    let status = response.status();
+    let body: serde_json::Value = response.json().await.unwrap_or(serde_json::Value::Null);
+    if status.is_success() {
+        if body["resourceType"] != "ValueSet" || body.get("expansion").is_none() {
+            return Err(crate::error::ModelError::validation_error(
+                "the terminology server's answer is not an expanded ValueSet",
+            ));
+        }
+        return Ok(ExpandedValueSet::Found(body));
+    }
+    let not_found = matches!(status.as_u16(), 404 | 410)
+        || (body["resourceType"] == "OperationOutcome"
+            && body["issue"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|issue| issue["code"] == "not-found"));
+    if by_canonical && not_found {
+        return Ok(ExpandedValueSet::Unknown);
+    }
+    let issue = &body["issue"][0];
+    let detail = issue["details"]["text"]
+        .as_str()
+        .or_else(|| issue["diagnostics"].as_str())
+        .map(|text| format!(": {text}"))
+        .unwrap_or_default();
+    Err(crate::error::ModelError::validation_error(format!(
+        "the terminology server answered {status}{detail}"
+    )))
 }
 
 #[cfg(feature = "http-client")]
@@ -417,7 +553,7 @@ impl TerminologyProvider for HttpTerminologyProvider {
     async fn expand_valueset(
         &self,
         valueset_url: &str,
-        _parameters: Option<&ExpansionParameters>,
+        parameters: Option<&ExpansionParameters>,
     ) -> Result<ValueSetExpansion> {
         // Split a `url|version` canonical: `$expand` takes the bare canonical in
         // `url` and the version in `valueSetVersion` (a `|`-versioned `url` 400s on
@@ -426,64 +562,63 @@ impl TerminologyProvider for HttpTerminologyProvider {
             Some((base, version)) => (base, Some(version)),
             None => (valueset_url, None),
         };
-        let mut url = format!("{}/ValueSet/$expand?url={}", self.base_url, vs_url);
-        if let Some(version) = vs_version {
-            url.push_str("&valueSetVersion=");
-            url.push_str(version);
+        let mut query: Vec<(&str, String)> = Vec::new();
+        if let Some(parameters) = parameters {
+            if let Some(filter) = &parameters.filter {
+                query.push(("filter", filter.clone()));
+            }
+            if let Some(language) = &parameters.language {
+                query.push(("displayLanguage", language.clone()));
+            }
         }
-
-        let response = self
-            .build_request(reqwest::Method::GET, &url)
-            .send()
-            .await
-            .map_err(|e| {
-                crate::error::ModelError::validation_error(format!("HTTP request failed: {e}"))
-            })?;
-
-        if response.status().is_success() {
-            let json: serde_json::Value = response.json().await.map_err(|e| {
-                crate::error::ModelError::validation_error(format!("Failed to parse JSON: {e}"))
-            })?;
-
-            // Parse ValueSet expansion
-            let contains = if let Some(expansion) = json.get("expansion") {
-                if let Some(contains_array) = expansion.get("contains").and_then(|c| c.as_array()) {
-                    contains_array
-                        .iter()
-                        .filter_map(|item| {
-                            Some(ValueSetConcept {
-                                code: item.get("code")?.as_str()?.to_string(),
-                                system: item
-                                    .get("system")
-                                    .and_then(|s| s.as_str())
-                                    .map(String::from),
-                                display: item
-                                    .get("display")
-                                    .and_then(|d| d.as_str())
-                                    .map(String::from),
-                            })
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
+        let count = parameters.and_then(|parameters| parameters.count);
+        let json = match self
+            .get_expansion(vs_url, vs_version, count, &query)
+            .await?
+        {
+            ExpandedValueSet::Found(json) => json,
+            ExpandedValueSet::Unknown => {
+                return Err(crate::error::ModelError::validation_error(format!(
+                    "ValueSet {valueset_url} is not known to {}",
+                    self.base_url
+                )));
+            }
+        };
+        let expansion = &json["expansion"];
+        let mut contains = Vec::new();
+        let mut pending: Vec<&serde_json::Value> = vec![&expansion["contains"]];
+        while let Some(list) = pending.pop() {
+            for item in list.as_array().into_iter().flatten() {
+                if let Some(code) = item["code"].as_str() {
+                    contains.push(ValueSetConcept {
+                        code: code.to_string(),
+                        system: item["system"].as_str().map(String::from),
+                        display: item["display"].as_str().map(String::from),
+                    });
                 }
-            } else {
-                Vec::new()
-            };
-
-            return Ok(ValueSetExpansion {
-                contains,
-                total: Some(0), // Would need to parse from response
-                parameters: Vec::new(),
-                timestamp: None,
-            });
+                pending.push(&item["contains"]);
+            }
         }
-
+        let parameters = expansion["parameter"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|parameter| {
+                let name = parameter["name"].as_str()?.to_string();
+                let value = parameter.as_object()?.iter().find_map(|(key, value)| {
+                    key.starts_with("value").then(|| match value {
+                        serde_json::Value::String(text) => text.clone(),
+                        other => other.to_string(),
+                    })
+                })?;
+                Some(ExpansionParameter { name, value })
+            })
+            .collect();
         Ok(ValueSetExpansion {
-            contains: Vec::new(),
-            total: Some(0),
-            parameters: Vec::new(),
-            timestamp: None,
+            total: expansion["total"].as_u64().map(|total| total as u32),
+            contains,
+            parameters,
+            timestamp: expansion["timestamp"].as_str().map(String::from),
         })
     }
 
@@ -829,6 +964,52 @@ impl TerminologyProvider for HttpTerminologyProvider {
         Ok(SubsumptionResult {
             outcome: SubsumptionOutcome::NotSubsumed,
         })
+    }
+
+    fn endpoint(&self) -> Option<&str> {
+        Some(&self.base_url)
+    }
+
+    async fn expand_valueset_resource(
+        &self,
+        url: &str,
+        version: Option<&str>,
+        count: Option<u32>,
+    ) -> Result<ExpandedValueSet> {
+        self.get_expansion(url, version, count, &[]).await
+    }
+
+    async fn expand_valueset_definition(
+        &self,
+        value_set: &serde_json::Value,
+        count: Option<u32>,
+    ) -> Result<ExpandedValueSet> {
+        let mut parameter = vec![serde_json::json!({"name": "valueSet", "resource": value_set})];
+        if let Some(count) = count {
+            parameter.push(serde_json::json!({"name": "count", "valueInteger": count}));
+        }
+        let body = serde_json::json!({"resourceType": "Parameters", "parameter": parameter});
+        let response = self
+            .build_request(
+                reqwest::Method::POST,
+                &format!("{}/ValueSet/$expand", self.base_url),
+            )
+            .header("Content-Type", "application/fhir+json")
+            .body(body.to_string())
+            .send()
+            .await
+            .map_err(|e| {
+                crate::error::ModelError::validation_error(format!("HTTP request failed: {e}"))
+            })?;
+        let mut answer = expanded_value_set(response, false).await?;
+        if let ExpandedValueSet::Found(expanded) = &mut answer {
+            for field in ["url", "version"] {
+                if let Some(value) = value_set.get(field) {
+                    expanded[field] = value.clone();
+                }
+            }
+        }
+        Ok(answer)
     }
 
     async fn test_connection(&self) -> Result<ConnectionStatus> {
@@ -1258,6 +1439,33 @@ impl<T: TerminologyProvider + 'static> TerminologyProvider for CachedTerminology
         self.inner.subsumes(system, parent, child).await
     }
 
+    fn endpoint(&self) -> Option<&str> {
+        self.inner.endpoint()
+    }
+
+    async fn expand_valueset_resource(
+        &self,
+        url: &str,
+        version: Option<&str>,
+        count: Option<u32>,
+    ) -> Result<ExpandedValueSet> {
+        // Not cached: a caller asking for the whole membership resolves it
+        // once and records what it got.
+        self.inner
+            .expand_valueset_resource(url, version, count)
+            .await
+    }
+
+    async fn expand_valueset_definition(
+        &self,
+        value_set: &serde_json::Value,
+        count: Option<u32>,
+    ) -> Result<ExpandedValueSet> {
+        self.inner
+            .expand_valueset_definition(value_set, count)
+            .await
+    }
+
     async fn test_connection(&self) -> Result<ConnectionStatus> {
         // Connection test is never cached
         self.inner.test_connection().await
@@ -1417,6 +1625,33 @@ impl TerminologyProvider for DefaultTerminologyProvider {
 
     async fn subsumes(&self, system: &str, parent: &str, child: &str) -> Result<SubsumptionResult> {
         self.inner.subsumes(system, parent, child).await
+    }
+
+    fn endpoint(&self) -> Option<&str> {
+        self.inner.endpoint()
+    }
+
+    async fn expand_valueset_resource(
+        &self,
+        url: &str,
+        version: Option<&str>,
+        count: Option<u32>,
+    ) -> Result<ExpandedValueSet> {
+        // Not cached: a caller asking for the whole membership resolves it
+        // once and records what it got.
+        self.inner
+            .expand_valueset_resource(url, version, count)
+            .await
+    }
+
+    async fn expand_valueset_definition(
+        &self,
+        value_set: &serde_json::Value,
+        count: Option<u32>,
+    ) -> Result<ExpandedValueSet> {
+        self.inner
+            .expand_valueset_definition(value_set, count)
+            .await
     }
 
     async fn test_connection(&self) -> Result<ConnectionStatus> {
@@ -1617,6 +1852,156 @@ mod tests {
                 .validate_code("test", "http://test.com", None)
                 .await
                 .unwrap()
+        );
+    }
+}
+
+#[cfg(all(test, feature = "http-client"))]
+mod http_tests {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    /// A one-request-per-connection HTTP server answering by request line.
+    fn serve(answer: fn(&str, &str) -> (u16, Value)) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut request_line = String::new();
+                reader.read_line(&mut request_line).unwrap();
+                let mut length = 0;
+                loop {
+                    let mut header = String::new();
+                    reader.read_line(&mut header).unwrap();
+                    if header.trim().is_empty() {
+                        break;
+                    }
+                    if let Some(value) = header.to_ascii_lowercase().strip_prefix("content-length:")
+                    {
+                        length = value.trim().parse().unwrap();
+                    }
+                }
+                let mut body = vec![0; length];
+                reader.read_exact(&mut body).unwrap();
+                let (status, reply) = answer(&request_line, &String::from_utf8(body).unwrap());
+                let reply = reply.to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 {status} X\r\ncontent-type: application/fhir+json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
+                    reply.len()
+                )
+                .unwrap();
+            }
+        });
+        format!("http://{address}")
+    }
+
+    fn answer(request: &str, body: &str) -> (u16, Value) {
+        let expansion = json!({"resourceType": "ValueSet", "expansion": {
+            "total": 2, "parameter": [{"name": "used-codesystem", "valueUri": "http://s|1"}],
+            "contains": [{"system": "http://s", "code": "a", "contains": [{"system": "http://s", "code": "b"}]}]}});
+        if request.starts_with("POST") {
+            assert!(body.contains("\"valueSet\""));
+            return (200, expansion);
+        }
+        if request.contains("url=http%3A%2F%2Fx%2Fknown") {
+            assert!(request.contains("valueSetVersion=2") && request.contains("count=100"));
+            return (200, expansion);
+        }
+        if request.contains("url=http%3A%2F%2Fx%2Fbroken") {
+            return (
+                500,
+                json!({"resourceType": "OperationOutcome", "issue": [
+                {"severity": "error", "code": "exception", "details": {"text": "boom"}}]}),
+            );
+        }
+        (
+            422,
+            json!({"resourceType": "OperationOutcome", "issue": [
+            {"severity": "error", "code": "not-found", "diagnostics": "ValueSet not found"}]}),
+        )
+    }
+
+    #[tokio::test]
+    async fn strict_expansions_keep_the_resource_and_tell_unknown_from_failure() {
+        let provider = HttpTerminologyProvider::new(serve(answer)).unwrap();
+        assert!(provider.endpoint().unwrap().starts_with("http://127.0.0.1"));
+        match provider
+            .expand_valueset_resource("http://x/known", Some("2"), Some(100))
+            .await
+            .unwrap()
+        {
+            ExpandedValueSet::Found(value_set) => {
+                assert_eq!(value_set["url"], "http://x/known");
+                assert_eq!(value_set["version"], "2");
+                assert_eq!(value_set["expansion"]["total"], 2);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(
+            provider
+                .expand_valueset_resource("http://x/missing", None, None)
+                .await
+                .unwrap(),
+            ExpandedValueSet::Unknown
+        ));
+        let failure = provider
+            .expand_valueset_resource("http://x/broken", None, None)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            failure.contains("500") && failure.contains("boom"),
+            "{failure}"
+        );
+        let definition =
+            json!({"resourceType": "ValueSet", "url": "http://x/private", "compose": {}});
+        match provider
+            .expand_valueset_definition(&definition, Some(10))
+            .await
+            .unwrap()
+        {
+            ExpandedValueSet::Found(value_set) => assert_eq!(value_set["url"], "http://x/private"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_summary_expansion_flattens_and_fails_loudly() {
+        let provider = HttpTerminologyProvider::new(serve(answer)).unwrap();
+        let expansion = provider
+            .expand_valueset(
+                "http://x/known|2",
+                Some(&ExpansionParameters {
+                    filter: None,
+                    count: Some(100),
+                    language: None,
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(expansion.total, Some(2));
+        assert_eq!(expansion.contains.len(), 2);
+        assert_eq!(expansion.parameters[0].value, "http://s|1");
+        // A failure was an empty expansion before; it is an error now.
+        assert!(
+            provider
+                .expand_valueset("http://x/broken", None)
+                .await
+                .is_err()
+        );
+        assert!(
+            provider
+                .expand_valueset("http://x/missing", None)
+                .await
+                .is_err()
         );
     }
 }
